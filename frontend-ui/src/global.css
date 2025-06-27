@@ -5,9 +5,6 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
-
-
-
 .row {
   display: flex;
   gap: 24px;
