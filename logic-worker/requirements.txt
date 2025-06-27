@@ -1,0 +1,13 @@
+numpy==1.24.3
+opencv-python==4.6.0.66
+paddleocr==2.6.1.3
+paddlepaddle==2.6.1
+aiokafka
+pytesseract
+Pillow
+boto3
+psycopg2-binary
+python-dotenv
+sqlalchemy
+openai
+kafka-python

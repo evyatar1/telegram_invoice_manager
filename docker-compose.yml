@@ -1,0 +1,143 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    container_name: telegram_invoice_manager-db-1
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: appdb
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./databases/app-db:/docker-entrypoint-initdb.d
+    ports:
+      - "5433:5432"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d appdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    networks:
+      - app-network
+
+  broker:
+    image: bitnami/kafka:3.4.0
+    container_name: broker
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@broker:9093
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    depends_on:
+      - zookeeper
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # REMOVED: volumes and command for init-kafka-topics.sh from here
+
+  # NEW SERVICE: For initializing Kafka topics
+  kafka-init:
+    image: bitnami/kafka:3.4.0 # Use the same Kafka image
+    container_name: kafka-topic-initializer
+    volumes:
+      - ./init-kafka-topics.sh:/usr/local/bin/init-kafka-topics.sh:ro
+    command: ["bash", "/usr/local/bin/init-kafka-topics.sh"]
+    depends_on:
+      broker:
+        condition: service_healthy # Wait for broker to be healthy before creating topics
+    networks:
+      - app-network
+    restart: "no" # This is a one-off task, it should not restart
+
+  api-server:
+    build:
+      context: .
+      dockerfile: ./api-server/Dockerfile
+    container_name: telegram_invoice_manager-api-server-1
+    env_file: ./api-server/.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      broker: # Still depends on broker being up for connection
+        condition: service_healthy
+      kafka-init: # NEW: Depends on kafka-init to ensure topics exist
+        condition: service_completed_successfully # Ensure topics are created before starting
+    networks:
+      - app-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: ./logic-worker/Dockerfile
+    container_name: telegram_invoice_manager-worker-1
+    env_file: ./logic-worker/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      broker:
+        condition: service_healthy
+      kafka-init: # NEW: Depends on kafka-init to ensure topics exist
+        condition: service_completed_successfully
+    restart: on-failure
+    networks:
+      - app-network
+
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: ./telegram-bot/Dockerfile
+    container_name: telegram_invoice_manager-telegram-bot-1
+    env_file: ./telegram-bot/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      broker:
+        condition: service_healthy
+      kafka-init: # NEW: Depends on kafka-init to ensure topics exist
+        condition: service_completed_successfully
+    restart: on-failure
+    networks:
+      - app-network
+
+  frontend:
+    build: ./frontend-ui
+    container_name: telegram_invoice_manager-frontend-1
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    depends_on:
+      - api-server
+    networks:
+      - app-network
+
+volumes:
+  db-data:
+
+networks:
+  app-network:
+    driver: bridge

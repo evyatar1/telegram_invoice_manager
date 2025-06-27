@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+python-jose
+passlib
+psycopg2-binary
+aiokafka
+boto3
+python-dotenv
+python-telegram-bot[asyncio]
+pydantic[email]
+sqlalchemy
+python-multipart
+aiohttp
+bcrypt
+matplotlib
