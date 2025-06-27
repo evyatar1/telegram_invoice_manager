@@ -1,2 +1,28 @@
+# Node.js specific
+/node_modules/
+frontend-ui/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+.yarn/
+
+# Build artifacts
+/build/
+frontend-ui/build/
+/dist/
+
+# Environment variables
+.env
 **/.env
-/node_modules
+
+# Python specific
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# Operating System / IDE specific files
+.DS_Store
+.idea/
+*.log
