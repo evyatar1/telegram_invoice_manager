@@ -207,6 +207,15 @@ function App() {
   }, [token, view]);
 
 
+  useEffect(() => {
+  const exists = invoices.some((inv) => inv.id === selectedRowId);
+  if (!exists) {
+    setSelectedRowId(null);
+  }
+}, [invoices, selectedRowId]);
+
+
+
 function CustomNoRowsOverlay() {
   return (
     <GridOverlay>
@@ -445,6 +454,7 @@ const handleDownloadCSV = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+            <label className="block mb-4">  </label>
             <button
               onClick={handleLogin}
               className="w-full bg-blue-600 text-white p-3 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
@@ -498,6 +508,7 @@ const handleDownloadCSV = () => {
               value={telegramChatId}
               onChange={(e) => setTelegramChatId(e.target.value)}
             />
+            <label className="block mb-4">  </label>
             <button
               onClick={handleRegister}
               className="w-full bg-green-600 text-white p-3 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
@@ -639,33 +650,28 @@ const handleDownloadCSV = () => {
               <h2 className="text-xl font-semibold mb-4 text-gray-700">Recent Invoices</h2>
               <div style={{ height: 400, width: "100%" }}>
 
-                <DataGrid
-                  rows={invoices}
-                  columns={columns}
-                  getRowId={(row) => row.id}
-                  components={{
-                    NoRowsOverlay: CustomNoRowsOverlay,
-                  }}
-                  pageSize={10}
-                  rowsPerPageOptions={[10]}
-                  density="compact"
-                  className="rounded-md"
-                  checkboxSelection
-                  selectionModel={selectedRowId ? [selectedRowId] : []}
-                  onSelectionModelChange={(newSelection) => {
-                    setSelectedRowId(newSelection[0] || null);
-                  }}
-                  localeText={{
-                    footerRowSelected: (count) =>
-                      count === 1
-                        ? `Invoice with ID ${selectedRowId} selected`
-                        : `${count} invoices selected`,
-                  }}
-                />
-
-
-
-
+                    <DataGrid
+                      rows={invoices}
+                      columns={columns}
+                      getRowId={(row) => row.id}
+                      components={{
+                        NoRowsOverlay: CustomNoRowsOverlay,
+                      }}
+                      pageSize={10}
+                      rowsPerPageOptions={[10]}
+                      density="compact"
+                      className="rounded-md"
+                      onRowClick={(params) => {
+                        setSelectedRowId(params.id);
+                      }}
+                      selectionModel={selectedRowId ? [selectedRowId] : []}
+                      localeText={{
+                        footerRowSelected: (count) =>
+                          count === 1
+                            ? `Invoice with ID ${selectedRowId} selected`
+                            : `${count} invoices selected`,
+                      }}
+                    />
 
               </div>
             </div>
