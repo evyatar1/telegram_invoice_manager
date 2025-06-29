@@ -1,4 +1,3 @@
-# worker/config.py
 import os
 from shared.config import *
 from dotenv import load_dotenv

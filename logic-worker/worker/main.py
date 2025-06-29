@@ -1,4 +1,3 @@
-# worker/main.py
 import asyncio
 from .kafka_consumer import consume_loop
 

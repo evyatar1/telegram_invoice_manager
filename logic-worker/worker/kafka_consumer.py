@@ -1,4 +1,3 @@
-# worker/kafka_consumer.py
 import asyncio
 from aiokafka import AIOKafkaConsumer
 import os
@@ -56,4 +55,3 @@ async def consume_loop():
     finally:
         logger.info("Kafka consumer stopping...")
         await consumer.stop()
-

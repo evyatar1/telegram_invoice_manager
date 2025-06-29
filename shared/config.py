@@ -1,5 +1,4 @@
 import os
-
 # Kafka
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "invoices")
 # IMPORTANT: Use 'broker:9092' as the default for Docker Compose internal communication

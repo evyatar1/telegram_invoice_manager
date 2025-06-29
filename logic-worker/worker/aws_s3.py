@@ -1,7 +1,6 @@
-# worker/aws_s3.py
 import boto3
 import io
-import os # Make sure os is imported
+import os
 
 # Retrieve S3 bucket and region from environment variables
 S3_BUCKET = os.getenv("S3_BUCKET")
@@ -22,5 +21,3 @@ def download_to_memory(key: str) -> bytes:
     except Exception as e:
         print(f"Error downloading {key} from S3: {e}")
         return None
-
-
