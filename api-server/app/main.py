@@ -1,4 +1,3 @@
-# api-server/app/main.py
 import uvicorn
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
@@ -67,5 +66,3 @@ app.add_middleware(
 # Import and include the API router after the app is created
 from .routes import router
 app.include_router(router)
-
-

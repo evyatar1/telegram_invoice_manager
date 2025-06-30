@@ -1,6 +1,3 @@
-
-
-// frontend-ui/src/App.js
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { DataGrid, GridOverlay  } from "@mui/x-data-grid";
 import { Pie } from "react-chartjs-2";
@@ -11,9 +8,9 @@ import {
   verifyOtp,
   sendCsvToTelegram,
   sendChartToTelegram,
-  deleteInvoice, // Import the new deleteInvoice function
-} from "./api"; // Ensure this path is correct: frontend-ui/src/api.js
-import TaskPoller from "./components/TaskPoller"; // Ensure this path is correct: frontend-ui/src/components/TaskPoller.js
+  deleteInvoice,
+} from "./api";
+import TaskPoller from "./components/TaskPoller";
 import axios from "axios";
 
 // Import Chart.js components and register them
@@ -72,9 +69,6 @@ async function fetchUserInvoices(userToken, setInvoices, setChartData, setMessag
   }
 }
 
-
-
-
 function App() {
   const [token, setToken] = useState(null);
   const [invoices, setInvoices] = useState([]);
@@ -96,8 +90,6 @@ function App() {
   const [selectedRowId, setSelectedRowId] = useState(null);
 
   const fileInputRef = useRef(null);
-
-
 
 
   // Helper functions to clear messages after a delay
@@ -215,7 +207,6 @@ function App() {
 }, [invoices, selectedRowId]);
 
 
-
 function CustomNoRowsOverlay() {
   return (
     <GridOverlay>
@@ -225,7 +216,6 @@ function CustomNoRowsOverlay() {
     </GridOverlay>
   );
 }
-
 
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
@@ -688,18 +678,14 @@ const handleDownloadCSV = () => {
             </div>
           </div>
 
-
           <TaskPoller
            token={token}
            onUpdate={() => fetchUserInvoices(token, setInvoices, setChartData, setMessage, clearMessage, setToken, setView)}
            />
 
-
-
         </div>
       );
     }
-
 
   };
 
@@ -707,5 +693,3 @@ const handleDownloadCSV = () => {
 }
 
 export default App;
-
-

@@ -1,4 +1,3 @@
-# api-server/app/kafka_producer.py
 from aiokafka import AIOKafkaProducer
 import os
 
@@ -24,4 +23,3 @@ async def stop_kafka():
         await producer.stop()
         print("Kafka producer stopped.")
         producer = None # Clear the producer instance
-
