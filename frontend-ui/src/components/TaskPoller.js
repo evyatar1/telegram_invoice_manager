@@ -18,7 +18,7 @@ export default function TaskPoller({ onUpdate, token }) {
       } catch (error) {
         console.error("Error fetching invoices:", error);
       }
-    }, 5000);
+    }, 2000);
 
     return () => clearInterval(iv);
   }, [onUpdate, token]);

@@ -1,14 +1,8 @@
-# Library for interacting with the Telegram Bot API
 python-telegram-bot[asyncio]
-# Library for loading environment variables from .env files
 python-dotenv
-# AWS SDK for Python (used for S3 operations)
 boto3
-# SQLAlchemy for database interaction
 sqlalchemy
-# PostgreSQL database adapter for SQLAlchemy
 psycopg2-binary
-# A HTTP client library for downloading files from Telegram (used in bot's handle_photo)
 aiohttp
 aiokafka
 requests

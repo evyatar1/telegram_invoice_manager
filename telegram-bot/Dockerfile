@@ -28,4 +28,3 @@ RUN chmod +x /wait-for-it.sh
 
 # Command to run the bot, waiting for DB and Kafka
 ENTRYPOINT ["/wait-for-it.sh", "db:5432", "broker:9092", "--", "python", "bot/main.py"]
-

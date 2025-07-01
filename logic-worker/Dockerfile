@@ -38,4 +38,3 @@ WORKDIR /worker
 
 # Start the application
 ENTRYPOINT ["/wait-for-it.sh", "broker:9092", "--", "python", "-m", "logic-worker.worker.main"]
-
