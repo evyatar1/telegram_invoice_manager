@@ -1,7 +1,7 @@
 import asyncio
 from aiokafka import AIOKafkaConsumer
 import os
-import json # Import json
+import json
 from .task_processor import process_invoice
 from .aws_s3 import download_to_memory
 from shared.config import KAFKA_TOPIC, KAFKA_BOOTSTRAP_SERVERS

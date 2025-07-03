@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { DataGrid, GridOverlay  } from "@mui/x-data-grid";
 import { Pie } from "react-chartjs-2";
+
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
+
 import {
   login,
   fetchInvoices,
@@ -250,6 +254,65 @@ function CustomNoRowsOverlay() {
     fileInputRef.current.click();
   };
 
+
+
+
+const handleDownloadExcel = async () => {
+  if (invoices.length === 0) {
+    setMessage("No invoices to download.");
+    clearMessage();
+    return;
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Invoices');
+
+  // Define columns
+  worksheet.columns = [
+    { header: 'ID', key: 'id', width: 10 },
+    { header: 'Status', key: 'status', width: 15 },
+    { header: 'Category', key: 'category', width: 20 },
+    { header: 'Created At', key: 'created_at', width: 20 },
+    { header: 'Vendor', key: 'vendor', width: 25 },
+    { header: 'Amount', key: 'amount', width: 15 },
+    { header: 'Purchase Date', key: 'purchase_date', width: 20 },
+    { header: 'Download Original', key: 'download', width: 40 }
+  ];
+
+  // Add rows
+  invoices.forEach(invoice => {
+    const extracted = invoice.extracted_data || {};
+    const downloadLink = invoice.preview_url || invoice.s3_key || '';
+
+    worksheet.addRow({
+      id: invoice.id,
+      status: invoice.status,
+      category: invoice.category || 'Uncategorized',
+      created_at: invoice.created_at,
+      vendor: extracted.vendor_name || 'Unknown',
+      amount: extracted.amount || 'Unknown',
+      purchase_date: extracted.purchase_date || 'Unknown',
+      download: 'Download'
+    });
+
+    // Add hyperlink to the last row, last column (download)
+    const rowNumber = worksheet.lastRow.number;
+    const downloadCell = worksheet.getCell(`H${rowNumber}`);
+    downloadCell.value = { text: 'Download', hyperlink: downloadLink };
+    downloadCell.font = { color: { argb: 'FF0000FF' }, underline: true };
+  });
+
+  // Write workbook to buffer
+  const buf = await workbook.xlsx.writeBuffer();
+
+  // Create Blob and save
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  saveAs(blob, 'invoices.xlsx');
+};
+
+
+
+
 const handleDownloadCSV = () => {
   if (invoices.length === 0) {
     setMessage("No invoices to download.");
@@ -275,6 +338,7 @@ const handleDownloadCSV = () => {
     const extracted = invoice.extracted_data || {};
 
     const downloadLink = invoice.preview_url || invoice.s3_key || "Unknown";
+
 
 
     const row = [
@@ -564,7 +628,7 @@ const handleDownloadCSV = () => {
                 Upload Invoice
               </button>
               <button
-                onClick={handleDownloadCSV}
+                onClick={handleDownloadExcel}
                 className="bg-green-600 text-white px-6 py-3 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-150 ease-in-out"
               >
                 Download CSV

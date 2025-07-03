@@ -13,7 +13,7 @@ import json
 import csv
 from telegram import Bot, InputFile
 import matplotlib.pyplot as plt
-
+import xlsxwriter
 from .kafka_producer import producer as kafka_producer_instance
 
 # DB setup (single DB with multiple tables)
@@ -294,7 +294,8 @@ async def get_invoices(current_user: dict = Depends(get_current_user)):
     invoices_list = []
 
     with engine.connect() as conn:
-        query = select(invoices).where(invoices.c.user_id == user_id)
+        # query = select(invoices).where(invoices.c.user_id == user_id)
+        query = select(invoices).where(invoices.c.user_id == user_id).order_by(invoices.c.created_at.asc())
         result = conn.execute(query).fetchall()
 
         for row in result:
@@ -333,9 +334,11 @@ async def get_invoices(current_user: dict = Depends(get_current_user)):
     return invoices_list
 
 
+#########
 @router.post("/send-csv-to-telegram")
-async def send_csv_to_telegram(current_user: dict = Depends(get_current_user)):
-    if not bot:
+async def send_excel_to_telegram(current_user: dict = Depends(get_current_user)):
+    TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
+    if not TG_BOT_TOKEN:
         raise HTTPException(status_code=500, detail="Telegram bot not configured. TG_BOT_TOKEN is missing.")
 
     user_telegram_chat_id = current_user.telegram_chat_id
@@ -344,29 +347,29 @@ async def send_csv_to_telegram(current_user: dict = Depends(get_current_user)):
 
     invoices_list = await get_invoices(current_user)
     if not invoices_list:
-        raise HTTPException(status_code=404, detail="No invoices found to generate CSV.")
+        raise HTTPException(status_code=404, detail="No invoices found to generate Excel.")
 
     s3_client = boto3.client('s3', region_name=os.getenv('S3_REGION'))
     bucket_name = os.getenv('S3_BUCKET')
 
     def generate_presigned_url(s3_key: str) -> str:
         try:
-            url = s3_client.generate_presigned_url(
+            return s3_client.generate_presigned_url(
                 'get_object',
                 Params={
                     'Bucket': bucket_name,
                     'Key': s3_key,
-                    'ResponseContentDisposition': 'attachment'  # Force download
+                    'ResponseContentDisposition': 'attachment'
                 },
-                ExpiresIn=3600  # 1 hour
+                ExpiresIn=3600
             )
-            return url
-        except ClientError as e:
-            logger.error(f"Failed to generate presigned URL for {s3_key}: {e}")
-            return s3_key  # fallback to raw key
+        except Exception as e:
+            print(f"Error generating URL for {s3_key}: {e}")
+            return s3_key
 
-    csv_buffer = io.StringIO()
-    writer = csv.writer(csv_buffer)
+    output = io.BytesIO()
+    workbook = xlsxwriter.Workbook(output, {'in_memory': True})
+    worksheet = workbook.add_worksheet("Invoices")
 
     headers = [
         "ID",
@@ -378,36 +381,118 @@ async def send_csv_to_telegram(current_user: dict = Depends(get_current_user)):
         "Purchase Date",
         "Download Original"
     ]
-    writer.writerow(headers)
 
-    for invoice in invoices_list:
+    for col_num, header in enumerate(headers):
+        worksheet.write(0, col_num, header)
+
+    for row_num, invoice in enumerate(invoices_list, start=1):
         extracted = invoice.get('extracted_data', {}) or {}
         s3_key = invoice.get('s3_key', '')
         presigned_url = generate_presigned_url(s3_key) if s3_key else ''
 
-        writer.writerow([
-            invoice.get('id'),
-            invoice.get('status', 'Unknown'),
-            invoice.get('category', 'Uncategorized'),
-            invoice.get('created_at').isoformat() if invoice.get('created_at') else '',
-            extracted.get('vendor_name', 'Unknown'),
-            extracted.get('amount', 'Unknown'),
-            extracted.get('purchase_date', 'Unknown'),
-            presigned_url
-        ])
+        worksheet.write(row_num, 0, invoice.get('id'))
+        worksheet.write(row_num, 1, invoice.get('status', 'Unknown'))
+        worksheet.write(row_num, 2, invoice.get('category', 'Uncategorized'))
+        worksheet.write(row_num, 3, invoice.get('created_at').isoformat() if invoice.get('created_at') else '')
+        worksheet.write(row_num, 4, extracted.get('vendor_name', 'Unknown'))
+        worksheet.write(row_num, 5, extracted.get('amount', 'Unknown'))
+        worksheet.write(row_num, 6, extracted.get('purchase_date', 'Unknown'))
+        worksheet.write_url(row_num, 7, presigned_url, string="Download")
 
-    csv_buffer.seek(0)
+    workbook.close()
+    output.seek(0)
 
     try:
+        bot = Bot(token=TG_BOT_TOKEN)
         await bot.send_document(
             chat_id=user_telegram_chat_id,
-            document=InputFile(csv_buffer.getvalue(), filename="invoices.csv"),
-            caption="Here are your invoices as a CSV file."
+            document=InputFile(output, filename="invoices.xlsx"),
+            caption="Here are your invoices as an Excel file."
         )
-        return {"message": "CSV sent to Telegram successfully!"}
+        return {"message": "Excel file sent to Telegram successfully!"}
     except Exception as e:
-        logger.error(f"Error sending CSV to Telegram: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to send CSV to Telegram: {e}")
+        print(f"Error sending Excel to Telegram: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send Excel to Telegram: {e}")
+
+
+
+
+
+# @router.post("/send-csv-to-telegram")
+# async def send_csv_to_telegram(current_user: dict = Depends(get_current_user)):
+#     if not bot:
+#         raise HTTPException(status_code=500, detail="Telegram bot not configured. TG_BOT_TOKEN is missing.")
+#
+#     user_telegram_chat_id = current_user.telegram_chat_id
+#     if not user_telegram_chat_id:
+#         raise HTTPException(status_code=400, detail="Telegram chat ID not registered for this user.")
+#
+#     invoices_list = await get_invoices(current_user)
+#     if not invoices_list:
+#         raise HTTPException(status_code=404, detail="No invoices found to generate CSV.")
+#
+#     s3_client = boto3.client('s3', region_name=os.getenv('S3_REGION'))
+#     bucket_name = os.getenv('S3_BUCKET')
+#
+#     def generate_presigned_url(s3_key: str) -> str:
+#         try:
+#             url = s3_client.generate_presigned_url(
+#                 'get_object',
+#                 Params={
+#                     'Bucket': bucket_name,
+#                     'Key': s3_key,
+#                     'ResponseContentDisposition': 'attachment'  # Force download
+#                 },
+#                 ExpiresIn=3600  # 1 hour
+#             )
+#             return url
+#         except ClientError as e:
+#             logger.error(f"Failed to generate presigned URL for {s3_key}: {e}")
+#             return s3_key  # fallback to raw key
+#
+#     csv_buffer = io.StringIO()
+#     writer = csv.writer(csv_buffer)
+#
+#     headers = [
+#         "ID",
+#         "Status",
+#         "Category",
+#         "Created At",
+#         "Vendor",
+#         "Amount",
+#         "Purchase Date",
+#         "Download Original"
+#     ]
+#     writer.writerow(headers)
+#
+#     for invoice in invoices_list:
+#         extracted = invoice.get('extracted_data', {}) or {}
+#         s3_key = invoice.get('s3_key', '')
+#         presigned_url = generate_presigned_url(s3_key) if s3_key else ''
+#
+#         writer.writerow([
+#             invoice.get('id'),
+#             invoice.get('status', 'Unknown'),
+#             invoice.get('category', 'Uncategorized'),
+#             invoice.get('created_at').isoformat() if invoice.get('created_at') else '',
+#             extracted.get('vendor_name', 'Unknown'),
+#             extracted.get('amount', 'Unknown'),
+#             extracted.get('purchase_date', 'Unknown'),
+#             presigned_url
+#         ])
+#
+#     csv_buffer.seek(0)
+#
+#     try:
+#         await bot.send_document(
+#             chat_id=user_telegram_chat_id,
+#             document=InputFile(csv_buffer.getvalue(), filename="invoices.csv"),
+#             caption="Here are your invoices as a CSV file."
+#         )
+#         return {"message": "CSV sent to Telegram successfully!"}
+#     except Exception as e:
+#         logger.error(f"Error sending CSV to Telegram: {e}")
+#         raise HTTPException(status_code=500, detail=f"Failed to send CSV to Telegram: {e}")
 
 
 @router.post("/send-chart-to-telegram")
