@@ -53,6 +53,7 @@ app = FastAPI(lifespan=lifespan)
 origins = [
     "http://localhost",
     "http://localhost:3000",
+    "http://host.docker.internal:3000"  # ADD THIS!
 ]
 
 app.add_middleware(
