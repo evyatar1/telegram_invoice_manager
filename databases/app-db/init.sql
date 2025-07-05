@@ -1,3 +1,4 @@
+
 -- Create the users table
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
@@ -28,6 +29,13 @@ CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices (user_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_s3_key ON invoices (s3_key);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices (status);
 CREATE INDEX IF NOT EXISTS idx_invoices_category ON invoices (category);
+
+
+
+
+
+
+
 
 
 ---- Create the users table

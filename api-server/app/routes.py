@@ -479,7 +479,7 @@ async def send_chart_to_telegram(chart_request: ChartRequest, current_user: dict
         await bot.send_photo(
             chat_id=user_telegram_chat_id,
             photo=InputFile(buffer, filename="invoice_categories_chart.png"),
-            caption="Here is your invoice category distribution chart (filtered)."
+            caption="Here is your invoice category distribution chart."
         )
         return {"message": "Chart sent to Telegram successfully!"}
     except Exception as e:
