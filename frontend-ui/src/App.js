@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { DataGrid, GridOverlay } from "@mui/x-data-grid";
 import { Pie } from "react-chartjs-2";
-
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
@@ -17,8 +16,6 @@ import {
 } from "./api";
 import TaskPoller from "./components/TaskPoller";
 import axios from "axios";
-
-// Import Chart.js components and register them
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -40,17 +37,12 @@ function App() {
   const [sendChartMessage, setSendChartMessage] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false); // State for custom confirm modal
   const [invoiceToDelete, setInvoiceToDelete] = useState(null); // State to store invoice ID for deletion
-
   const [selectedRowId, setSelectedRowId] = useState(null);
   // State for categories to exclude from chart
   const [excludedCategories, setExcludedCategories] = useState([]);
-
   // State to manage DataGrid column visibility
   const [columnVisibilityModel, setColumnVisibilityModel] = useState({});
-
-
   const fileInputRef = useRef(null);
-
 
   // Helper functions to clear messages after a delay
   const clearMessage = useCallback(() => {
@@ -64,7 +56,6 @@ function App() {
   const clearSendChartMessage = useCallback(() => {
     setTimeout(() => setSendChartMessage(""), 5000);
   }, []);
-
 
   // Custom confirmation dialog (since window.confirm is blocked in some environments)
   const customConfirm = (messageText, invoiceId) => {
@@ -239,15 +230,12 @@ function App() {
       }
     });
   };
-
-
   useEffect(() => {
     const exists = invoices.some((inv) => inv.id === selectedRowId);
     if (!exists) {
       setSelectedRowId(null);
     }
   }, [invoices, selectedRowId]);
-
 
   function CustomNoRowsOverlay() {
     return (
@@ -299,9 +287,6 @@ function App() {
     fileInputRef.current.click();
   };
 
-
-
-
   const handleDownloadExcel = async () => {
     if (invoices.length === 0) {
       setMessage("No invoices to download.");
@@ -330,7 +315,7 @@ function App() {
       const downloadLink = invoice.preview_url || invoice.s3_key || '';
 
       worksheet.addRow({
-        id: invoice.id, // Changed to 'id'
+        id: invoice.id,
         status: invoice.status,
         category: invoice.category || 'Uncategorized',
         created_at: new Date(invoice.created_at).toLocaleString(),
@@ -357,9 +342,6 @@ function App() {
     clearMessage();
   };
 
-
-
-
   const handleDownloadCSV = () => {
     if (invoices.length === 0) {
       setMessage("No invoices to download.");
@@ -369,7 +351,7 @@ function App() {
 
     // Define CSV headers
     const headers = [
-      "ID", // Changed to 'ID'
+      "ID",
       "Status",
       "Category",
       "Created At",
@@ -386,11 +368,8 @@ function App() {
       const extracted = invoice.extracted_data || {};
 
       const downloadLink = invoice.preview_url || invoice.s3_key || "Unknown";
-
-
-      // Construct row data for CSV
       const row = [
-        invoice.id, // Changed to 'id'
+        invoice.id,
         invoice.status,
         invoice.category || "Uncategorized",
         new Date(invoice.created_at).toLocaleString(),
@@ -424,9 +403,6 @@ function App() {
     setMessage("CSV file downloaded successfully!");
     clearMessage();
   };
-
-
-
   const handleSendCsvToTelegram = async () => {
     setIsSendingCsv(true);
     setSendCsvMessage("");
@@ -449,8 +425,6 @@ function App() {
       setIsSendingCsv(false);
     }
   };
-
-
   // Modified handleSendChartToTelegram to send excluded categories
   const handleSendChartToTelegram = async () => {
     setIsSendingChart(true);
@@ -475,14 +449,10 @@ function App() {
       setIsSendingChart(false);
     }
   };
-
-
   // The handleDelete function uses the customConfirm modal
   const handleDelete = (invoiceId) => {
     customConfirm("Are you sure you want to delete this invoice?", invoiceId);
   };
-
-
   // DataGrid columns definition
   // Note: The 'id' field is now 'id' for display.
   // The actual 'id' (global) is still used internally for deletion.
@@ -508,8 +478,6 @@ function App() {
         return date.toLocaleString();
       },
     },
-
-
     {
       field: "vendor_name",
       headerName: "Vendor",
@@ -526,8 +494,6 @@ function App() {
       headerAlign: 'left',
       valueGetter: (params) => params.row.extracted_data?.amount || "Unknown",
     },
-
-
     {
       field: "purchase_date",
       headerName: "Purchase Date",
@@ -842,7 +808,7 @@ function App() {
 
           <TaskPoller
             token={token}
-            onUpdate={() => fetchUserInvoices(token)} // Simplified onUpdate call
+            onUpdate={() => fetchUserInvoices(token)}
           />
 
           {/* Custom Confirmation Modal */}
@@ -851,8 +817,6 @@ function App() {
               <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
                 <h3 className="text-lg font-semibold mb-4 text-gray-800">Confirm Deletion</h3>
                 <p className="text-gray-700 mb-6">Are you sure you want to delete this invoice?</p>
-
-
                 <div className="flex justify-end space-x-4">
                   <button
                     onClick={handleCancelAction}
@@ -870,14 +834,10 @@ function App() {
               </div>
             </div>
           )}
-
-
         </div>
       );
     }
-
   };
-
   return <>{renderContent()}</>;
 }
 
