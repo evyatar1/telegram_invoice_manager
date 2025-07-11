@@ -9,5 +9,3 @@ ChartJS.register(ArcElement, Tooltip, Legend);
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);
-
-

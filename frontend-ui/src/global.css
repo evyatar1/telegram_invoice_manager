@@ -1,21 +1,4 @@
 body {
-  background-color: #d6d6d6;
-  margin: 0;
-  padding: 0 30px;
   font-family: 'Inter', sans-serif;
-}
-
-.row {
-  display: flex;
-  gap: 24px;
-  margin-bottom: 24px;
-}
-.label-input {
-  display: flex;
-  align-items: center;
-}
-.label-input label {
-  margin-right: 8px;
-  font-weight: 600;
-  color: #374151; /* gray-700 */
+  /* Tailwind takes care of background, margin, padding etc. */
 }

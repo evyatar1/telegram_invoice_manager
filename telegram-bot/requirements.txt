@@ -7,3 +7,6 @@ aiohttp
 aiokafka
 requests
 python-jose>=3.3.0
+fastapi
+passlib
+python-multipart

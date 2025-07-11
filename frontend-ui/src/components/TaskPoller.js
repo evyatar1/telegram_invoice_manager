@@ -1,28 +1,47 @@
-import { useEffect } from "react";
-import { fetchInvoices } from "../api";
+import { useEffect, useRef } from 'react';
+import axios from 'axios'; // Added axios import
 
-export default function TaskPoller({ onUpdate, token }) {
+/**
+ * TaskPoller Component
+ *
+ * This component is responsible for periodically fetching user invoices and profile data
+ * to keep the dashboard updated and check for Telegram account verification status.
+ * It uses a polling mechanism with a configurable interval.
+ *
+ * Props:
+ * - token: The user's authentication token (JWT).
+ * - onUpdate: A callback function to be executed when new data is fetched.
+ * This function typically triggers a re-fetch of invoices and user profile in App.js.
+ * - interval: The polling interval in milliseconds (default: 5000ms).
+ */
+function TaskPoller({ token, onUpdate, interval = 5000 }) { // Added interval prop
+  const intervalRef = useRef(null);
+
   useEffect(() => {
-    const iv = setInterval(async () => {
-      if (!token) return;
+    // Clear any existing interval when the component mounts or dependencies change
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
 
-      try {
-        const data = await fetchInvoices(token);
+    // Start polling only if a token is available
+    if (token) {
+      intervalRef.current = setInterval(() => {
+        // Execute the onUpdate callback to trigger data fetching in the parent component
+        // The onUpdate function in App.js (fetchUserInvoices) now takes the token directly
+        // and handles fetching both invoices and user profile.
+        onUpdate();
+      }, interval);
+    }
 
-        // Ensure onUpdate is a function
-        if (typeof onUpdate === "function") {
-          onUpdate(data);
-        } else {
-          console.error("onUpdate is not a function:", onUpdate);
-        }
-      } catch (error) {
-        console.error("Error fetching invoices:", error);
+    // Cleanup function: clear the interval when the component unmounts or token becomes null
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
       }
-    }, 2000);
-
-    return () => clearInterval(iv);
-  }, [onUpdate, token]);
+    };
+  }, [token, onUpdate, interval]); // Re-run effect if token, onUpdate, or interval changes
 
   return null;
 }
 
+export default TaskPoller;
