@@ -1,4 +1,3 @@
-# api-server/app/routes.py
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import create_engine, Table, Column, Integer, String, MetaData, DateTime, JSON, select, delete, ForeignKey, update as sql_update
@@ -6,163 +5,199 @@ from passlib.context import CryptContext
 from jose import jwt, JWTError
 from datetime import datetime, timedelta, timezone
 import uuid, random, boto3, os
-# Ensure shared.config is correctly imported. If it's in a 'shared' directory at the project root,
-# and '/app' is added to PYTHONPATH in Dockerfile, this import should work.
-from shared.config import DB_URL, S3_BUCKET, S3_REGION, JWT_SECRET, JWT_ALGO, JWT_EXP_DELTA_SECONDS, KAFKA_TOPIC, KAFKA_TELEGRAM_OTP_TOPIC
-from aiokafka import AIOKafkaProducer
+import logging
+import base64
+
+# Import shared configuration from the shared.config module.
+# This module is expected to be accessible via PYTHONPATH in the Docker environment.
+from shared.config import (
+    DB_URL, S3_BUCKET, S3_REGION, JWT_SECRET, JWT_ALGO, JWT_EXP_DELTA_SECONDS,
+    KAFKA_TOPIC, KAFKA_TELEGRAM_OTP_TOPIC, KAFKA_REPORT_REQUEST_TOPIC
+)
+from aiokafka import AIOKafkaProducer # This import is not strictly needed here as producer is accessed via request.app.state
 from fastapi.security import OAuth2PasswordBearer
 import io
 import json
-import csv
-from telegram import Bot, InputFile
-import matplotlib.pyplot as plt
-import xlsxwriter
-from sqlalchemy.engine.row import Row
-from botocore.exceptions import ClientError
-import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Configure logging for this module.
+# This ensures that logs from routes.py are handled by the configured logging system.
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# DB setup (single DB with multiple tables)
+# Database setup using SQLAlchemy.
+# This defines the connection to the PostgreSQL database.
 engine = create_engine(DB_URL)
 metadata = MetaData()
 
-TELEGRAM_TOKEN = os.getenv("TG_BOT_TOKEN")
-if not TELEGRAM_TOKEN:
-    logger.warning("TG_BOT_TOKEN not set. Telegram features will be disabled.")
-    bot = None
-else:
-    bot = Bot(token=TELEGRAM_TOKEN)
-
-# Users table definition - NOW MATCHES init.sql EXACTLY
+# Define the 'users' table schema.
+# This mirrors the structure of the 'users' table in your PostgreSQL database.
 users = Table("users", metadata,
               Column("id", Integer, primary_key=True, autoincrement=True),
               Column("email", String, unique=True, nullable=False),
               Column("hashed_pw", String, nullable=False),
               Column("phone", String, unique=True, nullable=True),
               Column("is_verified", Integer, default=0), # 0 for not verified, 1 for verified
-              Column("otp_secret", String, nullable=True), # Changed from otp_code to otp_secret
+              Column("otp_secret", String, nullable=True),
               Column("otp_expires", DateTime, nullable=True),
               Column("telegram_chat_id", String, unique=True, nullable=True)
               )
 
+# Define the 'invoices' table schema.
+# This mirrors the structure of the 'invoices' table in your PostgreSQL database.
 invoices = Table(
     "invoices",
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("user_id", Integer, ForeignKey("users.id"), nullable=False),
-    Column("s3_key", String, unique=True, nullable=False),
+    Column("s3_key", String, unique=True, nullable=False), # s3_key will now be a placeholder initially
     Column("created_at", DateTime, default=datetime.now(timezone.utc)),
     Column("status", String, default="pending"),
     Column("extracted_data", JSON),
     Column("category", String),
 )
 
+# Create all defined tables in the database if they do not already exist.
 metadata.create_all(engine)
 
-# Password hashing
+# Password hashing context using Passlib.
+# Configured to use bcrypt for secure password hashing.
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# OAuth2PasswordBearer for token extraction
+# OAuth2PasswordBearer for extracting JWT tokens from Authorization headers.
+# The tokenUrl points to the login endpoint where clients can obtain a token.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-# S3 client
+# AWS S3 client for interacting with Amazon S3.
+# Used for deleting objects and generating pre-signed URLs.
 s3_client = boto3.client("s3", region_name=S3_REGION)
 
-# Router for API endpoints
+# FastAPI router to group related API endpoints.
 router = APIRouter()
 
 
-# Helper for JWT token
+# Helper function to create JWT access tokens.
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    """
+    Creates a JWT access token with an expiration time.
+    :param data: Dictionary containing claims to be encoded in the token (e.g., {"sub": user_email}).
+    :param expires_delta: Optional timedelta for token expiration. Defaults to 15 minutes if not provided.
+    :return: Encoded JWT string.
+    """
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire}) # Add expiration timestamp to the payload
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGO)
     return encoded_jwt
 
 
-# Helper for getting current user
+# Dependency function to get the current authenticated user.
 async def get_current_user(token: str = Depends(oauth2_scheme)):
+    """
+    Decodes and validates the JWT token from the request header to authenticate the user.
+    Raises HTTPException if credentials are invalid or token is expired.
+    :param token: The JWT token extracted by oauth2_scheme.
+    :return: A dictionary representing the authenticated user's data from the database.
+    """
     credentials_exception = HTTPException(
         status_code=401,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        # Decode the JWT token using the secret key and algorithm.
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
-        user_email: str = payload.get("sub")
+        user_email: str = payload.get("sub") # Get the subject (user email) from the token payload
         if user_email is None:
-            raise credentials_exception
+            raise credentials_exception # Raise exception if email is not found in token
+
+        # Query the database to retrieve user details based on the email.
         with engine.connect() as conn:
             stmt = select(users).where(users.c.email == user_email)
             result = conn.execute(stmt).first()
             if result is None:
-                raise credentials_exception
-            return result._asdict()
+                raise credentials_exception # Raise exception if user not found in DB
+            return result._asdict() # Return user data as a dictionary
     except JWTError:
-        raise credentials_exception
+        raise credentials_exception # Raise exception if JWT decoding/validation fails
 
 
-# Pydantic models for request/response bodies
+# Pydantic models for validating request and response bodies.
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    """Pydantic model for user registration request."""
+    email: EmailStr # EmailStr ensures valid email format
     password: str
     phone: str
 
 class UserLogin(BaseModel):
+    """Pydantic model for user login request."""
     email: EmailStr
     password: str
 
 class Token(BaseModel):
+    """Pydantic model for JWT token response."""
     access_token: str
     token_type: str = "bearer"
 
 class VerifyOtp(BaseModel):
+    """Pydantic model for OTP verification request."""
     email: EmailStr
     otp: str
 
 class InvoiceResponse(BaseModel):
+    """Pydantic model for invoice response data."""
     id: int
     user_id: int
-    s3_key: str
+    s3_key: str # S3 key will be the real S3 key after worker upload, or a placeholder
     created_at: datetime
     status: str
     extracted_data: dict | None = None
     category: str | None = None
-    preview_url: str
+    preview_url: str # Will be a presigned URL or '#' if not yet in S3
 
 class TelegramLinkRequest(BaseModel):
+    """Pydantic model for linking Telegram account request."""
     phone: str
     telegram_chat_id: str
 
 class ChartRequest(BaseModel):
+    """Pydantic model for chart generation request."""
     chart_data: list[dict] = []
 
+
 # API Endpoints
+
 @router.delete("/invoices/{invoice_id}")
 async def delete_invoice(invoice_id: int, current_user: dict = Depends(get_current_user)):
-    with engine.begin() as conn:
+    """
+    Deletes an invoice record from the database and its corresponding file from S3.
+    Requires authentication.
+    :param invoice_id: The ID of the invoice to delete.
+    :param current_user: Authenticated user's data.
+    :return: Success message.
+    """
+    with engine.begin() as conn: # Use a transaction for database operations
+        # Query to find the invoice belonging to the current user
         query = select(invoices).where(invoices.c.id == invoice_id, invoices.c.user_id == current_user['id'])
         result = conn.execute(query).fetchone()
 
         if not result:
             raise HTTPException(status_code=404, detail="Invoice not found or you don't have permission to delete it.")
 
-        s3_key = result.s3_key
+        s3_key = result.s3_key # Get S3 key if it exists
 
-        try:
-            s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
-            logger.info(f"S3 object deleted: {s3_key}")
-        except Exception as e:
-            logger.error(f"Error deleting from S3: {e}")
+        # Only try to delete from S3 if an S3 key exists and it's not a placeholder
+        if s3_key and not s3_key.startswith("pending_upload_"):
+            try:
+                s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+                logger.info(f"S3 object deleted: {s3_key}") # Log S3 deletion
+            except Exception as e:
+                logger.error(f"Error deleting from S3: {e}", exc_info=True) # Log S3 deletion error
 
+        # Delete the invoice record from the database
         conn.execute(delete(invoices).where(invoices.c.id == invoice_id))
 
     return {"message": "Invoice deleted successfully"}
@@ -170,91 +205,126 @@ async def delete_invoice(invoice_id: int, current_user: dict = Depends(get_curre
 
 @router.post("/register")
 async def register_user(user: UserCreate):
+    """
+    Registers a new user in the system.
+    :param user: UserCreate Pydantic model containing email, password, and phone.
+    :return: Success message.
+    """
     with engine.connect() as conn:
+        # Check if a user with the given email already exists
         existing_user_query = select(users).where(users.c.email == user.email)
         existing_user = conn.execute(existing_user_query).fetchone()
         if existing_user:
             raise HTTPException(status_code=400, detail="Email already registered")
 
+        # Hash the user's password for secure storage
         hashed_password = pwd_context.hash(user.password)
 
+        # Insert the new user into the database
         insert_stmt = users.insert().values(
             email=user.email,
             hashed_pw=hashed_password,
             phone=user.phone,
-            is_verified=0,
-            otp_secret=None, # Changed from otp_code
+            is_verified=0, # User is not verified initially
+            otp_secret=None,
             otp_expires=None,
             telegram_chat_id=None
         )
         conn.execute(insert_stmt)
-        conn.commit()
+        conn.commit() # Commit the transaction to save changes
 
+    logger.info(f"User {user.email} registered successfully.") # Log user registration
     return {"message": "User registered successfully. Please link your Telegram account to verify."}
 
 @router.post("/link-telegram-account")
 async def link_telegram_account(telegram_link_data: TelegramLinkRequest, request: Request):
     """
     Endpoint for Telegram bot to link a user's Telegram chat ID
-    and send OTP via Telegram.
+    and send OTP via Telegram. The API server sends a Kafka message
+    for the worker to handle the actual OTP sending.
+    :param telegram_link_data: TelegramLinkRequest Pydantic model with phone and telegram_chat_id.
+    :param request: The FastAPI request object, used to access app.state.
+    :return: Status message.
     """
     with engine.connect() as conn:
+        # Find the user by phone number
         user_query = select(users).where(users.c.phone == telegram_link_data.phone)
         user = conn.execute(user_query).fetchone()
 
         if not user:
             raise HTTPException(status_code=404, detail="User with this phone number not found.")
 
+        # Check if the phone number is already linked to a different Telegram account
         if user.telegram_chat_id and user.telegram_chat_id != telegram_link_data.telegram_chat_id:
              raise HTTPException(status_code=400, detail="This phone number is already linked to a different Telegram account.")
 
-        otp_secret = str(random.randint(100000, 999999)) # Changed from otp_code
+        # Generate a random OTP and set its expiration time
+        otp_secret = str(random.randint(100000, 999999))
         otp_expires = datetime.now(timezone.utc) + timedelta(minutes=5)
 
+        # Update user record with Telegram chat ID, OTP, and expiration
         update_stmt = sql_update(users).where(users.c.id == user.id).values(
             telegram_chat_id=telegram_link_data.telegram_chat_id,
-            otp_secret=otp_secret, # Changed from otp_code
+            otp_secret=otp_secret,
             otp_expires=otp_expires
         )
         conn.execute(update_stmt)
-        conn.commit()
-        logger.info(f"User {user.email} updated with chat_id {telegram_link_data.telegram_chat_id} and OTP.")
+        conn.commit() # Commit the transaction
 
+        logger.info(f"User {user.email} updated with chat_id {telegram_link_data.telegram_chat_id} and OTP.") # Log update (not the OTP itself)
+
+        # Ensure Kafka producer is initialized before sending message
         if not hasattr(request.app.state, 'kafka_producer') or not request.app.state.kafka_producer:
             raise HTTPException(status_code=500, detail="Kafka producer is not initialized.")
 
+        # Prepare message payload for Kafka to send OTP
         message_payload = {
             "user_id": user.id,
-            "otp_secret": otp_secret, # Changed from otp_code
-            "chat_id": telegram_link_data.telegram_chat_id
+            "otp_secret": otp_secret, # OTP is sensitive, but sent over internal Kafka topic to trusted worker
+            "chat_id": telegram_link_data.telegram_chat_id,
+            "action": "send_otp" # Action for worker to identify task
         }
+        logger.info(
+            f"Preparing to send OTP Kafka message for user {user.id} with chat_id {telegram_link_data.telegram_chat_id}")
+        # Send the message to the Kafka OTP topic
         await request.app.state.kafka_producer.send_and_wait(
             KAFKA_TELEGRAM_OTP_TOPIC,
             json.dumps(message_payload).encode("utf-8")
         )
-        logger.info(f"Sent OTP Kafka message for user {user.id} to topic {KAFKA_TELEGRAM_OTP_TOPIC}.")
+        logger.info(f"Sent OTP Kafka message for user {user.id} to topic {KAFKA_TELEGRAM_OTP_TOPIC}.") # Log Kafka message sent
 
-    return {"message": "Telegram account linked. OTP sent to your Telegram chat."}
+    return {"message": "Telegram account linked. OTP sent to your Telegram."}
 
 
 @router.post("/verify-otp", response_model=Token)
 async def verify_otp(otp_data: VerifyOtp):
+    """
+    Verifies the provided OTP for a user and marks the account as verified if successful.
+    Returns a JWT token upon successful verification.
+    :param otp_data: VerifyOtp Pydantic model with email and OTP.
+    :return: JWT access token.
+    """
     with engine.connect() as conn:
+        # Query user by email
         query = select(users).where(users.c.email == otp_data.email)
         user = conn.execute(query).fetchone()
 
-        if not user or user.otp_secret != otp_data.otp or (user.otp_expires and user.otp_expires < datetime.now(timezone.utc)): # Changed from otp_code
+        # Validate OTP and expiration
+        if not user or user.otp_secret != otp_data.otp or (user.otp_expires and user.otp_expires < datetime.now(timezone.utc)):
+            logger.warning(f"Failed OTP verification attempt for {otp_data.email}.") # Log failed attempt
             raise HTTPException(status_code=400, detail="Invalid or expired OTP")
 
+        # Clear OTP data and mark user as verified
         update_stmt = sql_update(users).where(users.c.email == otp_data.email).values(
-            otp_secret=None, # Changed from otp_code
+            otp_secret=None,
             otp_expires=None,
             is_verified=1
         )
         conn.execute(update_stmt)
-        conn.commit()
-        logger.info(f"User {user.email} successfully verified.")
+        conn.commit() # Commit the transaction
+        logger.info(f"User {user.email} successfully verified.") # Log successful verification
 
+        # Create and return a new access token for the verified user
         access_token = create_access_token(
             data={"sub": user.email},
             expires_delta=timedelta(seconds=JWT_EXP_DELTA_SECONDS)
@@ -264,23 +334,27 @@ async def verify_otp(otp_data: VerifyOtp):
 
 @router.post("/login", response_model=Token)
 async def login_for_access_token(user_login: UserLogin):
+    """
+    Authenticates a user and returns a JWT access token.
+    :param user_login: UserLogin Pydantic model with email and password.
+    :return: JWT access token.
+    """
     with engine.connect() as conn:
+        # Find user by email
         stmt = select(users).where(users.c.email == user_login.email)
         user = conn.execute(stmt).fetchone()
 
+        # Verify user existence and password
         if not user or not pwd_context.verify(user_login.password, user.hashed_pw):
+            logger.warning(f"Failed login attempt for {user_login.email}.") # Log failed login attempt
             raise HTTPException(status_code=400, detail="Incorrect email or password")
 
-        # --- START OF MODIFICATION ---
-        # REMOVED/COMMENTED OUT THE VERIFICATION CHECK FOR LOGIN
-        # if not user.is_verified:
-        #     raise HTTPException(status_code=400, detail="Account not verified. Please complete Telegram linking and OTP verification.")
-        # --- END OF MODIFICATION ---
-
+        # Create and return access token
         access_token = create_access_token(
             data={"sub": user.email},
             expires_delta=timedelta(seconds=JWT_EXP_DELTA_SECONDS)
         )
+        logger.info(f"User {user_login.email} logged in successfully.") # Log successful login
         return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -290,241 +364,226 @@ async def upload_invoice(
         file: UploadFile = File(...),
         current_user: dict = Depends(get_current_user)
 ):
-    if not S3_BUCKET:
-        raise HTTPException(status_code=500, detail="S3_BUCKET environment variable not set.")
-
+    """
+    Handles invoice file uploads. Stores a placeholder in DB and sends image bytes
+    to Kafka for asynchronous processing by the worker.
+    :param request: The FastAPI request object.
+    :param file: The uploaded invoice file.
+    :param current_user: Authenticated user's data.
+    :return: Status message and invoice ID.
+    """
     user_id = current_user['id']
     file_extension = os.path.splitext(file.filename)[1]
-    s3_key = f"invoices/{user_id}/{uuid.uuid4()}{file_extension}"
+    # Generate a temporary/placeholder S3 key for the DB record.
+    # The actual S3 key will be set by the worker after upload to S3.
+    temp_s3_key = f"pending_upload_{user_id}_{uuid.uuid4()}{file_extension}"
 
     try:
         file_content = await file.read()
-        s3_client.put_object(Bucket=S3_BUCKET, Key=s3_key, Body=file_content, ContentType=file.content_type)
-        logger.info(f"API Server: Uploaded {file.filename} to S3 as {s3_key}")
+        # Encode image bytes to base64 for JSON serialization over Kafka.
+        # This allows sending binary data through Kafka messages.
+        encoded_image_bytes = base64.b64encode(file_content).decode('utf-8')
 
         with engine.begin() as conn:
+            # Record a pending invoice in the database with a temporary S3 key.
             insert_stmt = invoices.insert().values(
                 user_id=user_id,
-                s3_key=s3_key,
+                s3_key=temp_s3_key, # Store the temporary S3 key
                 status="pending",
                 created_at=datetime.now(timezone.utc)
-            ).returning(invoices.c.id)
+            ).returning(invoices.c.id) # Return the ID of the newly inserted invoice
             result = conn.execute(insert_stmt)
-            invoice_id = result.scalar_one()
-            logger.info(f"API Server: Recorded invoice {s3_key} in DB for user {user_id} (invoice_id={invoice_id})")
+            invoice_id = result.scalar_one() # Get the invoice ID
+            logger.info(f"Recorded invoice {file.filename} in DB for user {user_id} with temp_s3_key {temp_s3_key} (invoice_id={invoice_id})")
 
+        # Ensure Kafka producer is initialized
         if not hasattr(request.app.state, 'kafka_producer') or not request.app.state.kafka_producer:
             raise HTTPException(status_code=500, detail="Kafka producer is not initialized.")
 
+        # Prepare message payload for Kafka to trigger invoice processing
         message_payload = {
             "invoice_id": invoice_id,
-            "s3_key": s3_key
+            "image_bytes_base64": encoded_image_bytes, # Send image bytes over Kafka
+            "user_id": user_id,
+            "original_s3_key_placeholder": temp_s3_key # Pass the placeholder for worker to update
         }
 
+        # Send the message to the Kafka topic for invoice processing
         await request.app.state.kafka_producer.send_and_wait(
-            KAFKA_TOPIC,
+            KAFKA_TOPIC, # This is the topic for invoice processing requests
             json.dumps(message_payload).encode("utf-8")
         )
-        logger.info(f"API Server: Sent Kafka message: {message_payload}")
+        logger.info(f"Sent Kafka message with image bytes for invoice {invoice_id} to topic {KAFKA_TOPIC}")
 
         return {
             "message": "Invoice uploaded and submitted for processing",
             "invoice_id": invoice_id,
-            "s3_key": s3_key
+            "s3_key": temp_s3_key # Return the temporary key if frontend expects it
         }
 
     except Exception as e:
-        logger.error(f"API Server: Error during upload or Kafka message: {e}", exc_info=True)
+        logger.error(f"Error during upload or Kafka message: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to upload invoice or send for processing: {e}")
 
 
 async def get_invoices(current_user: dict):
+    """
+    Retrieves all invoices for the current user from the database and generates pre-signed URLs for S3 files.
+    :param current_user: Authenticated user's data.
+    :return: A list of invoice dictionaries.
+    """
     user_id = current_user['id']
     invoices_list = []
 
     with engine.connect() as conn:
+        # Query invoices for the current user, ordered by creation date.
         query = select(invoices).where(invoices.c.user_id == user_id).order_by(invoices.c.created_at.asc())
         result = conn.execute(query).fetchall()
 
         for row in result:
             invoice_dict = row._asdict()
 
+            # Handle extracted_data which might be stored as a string JSON
             if 'extracted_data' in invoice_dict and isinstance(invoice_dict['extracted_data'], str):
                 try:
                     invoice_dict['extracted_data'] = json.loads(invoice_dict['extracted_data'])
                 except json.JSONDecodeError:
                     invoice_dict['extracted_data'] = {}
 
+            # Set default category if not present
             invoice_dict['category'] = invoice_dict.get('category') or "Uncategorized"
 
-            try:
-                presigned_url = s3_client.generate_presigned_url(
-                    'get_object',
-                    Params={
-                        'Bucket': S3_BUCKET,
-                        'Key': row.s3_key,
-                        'ResponseContentDisposition': 'attachment'
-                    },
-                    ExpiresIn=3600
-                )
-                invoice_dict['preview_url'] = presigned_url
-            except Exception as e:
-                logger.error(f"API Server: ERROR generating presigned URL for {row.s3_key}: {e}", exc_info=True)
+            # Check if s3_key is a real S3 key (not a placeholder) to generate presigned URL
+            if row.s3_key and not row.s3_key.startswith("pending_upload_"):
+                try:
+                    # Generate a pre-signed URL for direct access to the S3 object
+                    presigned_url = s3_client.generate_presigned_url(
+                        'get_object',
+                        Params={
+                            'Bucket': S3_BUCKET,
+                            'Key': row.s3_key,
+                            'ResponseContentDisposition': 'attachment' # Suggests download
+                        },
+                        ExpiresIn=3600 # URL valid for 1 hour
+                    )
+                    invoice_dict['preview_url'] = presigned_url
+                except Exception as e:
+                    logger.error(f"ERROR generating presigned URL for {row.s3_key}: {e}", exc_info=True)
+                    invoice_dict['preview_url'] = "#" # Fallback if URL generation fails
+            else:
+                # If it's a placeholder, no preview URL is available yet
                 invoice_dict['preview_url'] = "#"
 
             invoices_list.append(invoice_dict)
 
-        logger.info(f"API Server: Retrieved {len(invoices_list)} invoices for user {user_id}")
+        logger.info(f"Retrieved {len(invoices_list)} invoices for user {user_id}")
 
     return invoices_list
 
 
 @router.get("/invoices", response_model=list[InvoiceResponse])
 async def list_invoices(current_user: dict = Depends(get_current_user)):
+    """
+    API endpoint to list all invoices for the authenticated user.
+    :param current_user: Authenticated user's data.
+    :return: A list of InvoiceResponse models.
+    """
     invoices_list = await get_invoices(current_user)
     return invoices_list
 
 
 @router.post("/send-csv-to-telegram")
-async def send_excel_to_telegram(current_user: dict = Depends(get_current_user)):
-    TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
-    if not TG_BOT_TOKEN:
-        raise HTTPException(status_code=500, detail="Telegram bot not configured. TG_BOT_TOKEN is missing.")
-
-    user_telegram_chat_id = current_user['telegram_chat_id']
-    if not user_telegram_chat_id:
-        raise HTTPException(status_code=400, detail="Telegram chat ID not registered for this user.")
-
-    invoices_list = await get_invoices(current_user)
-    if not invoices_list:
-        raise HTTPException(status_code=404, detail="No invoices found to generate Excel.")
-
-    bucket_name = S3_BUCKET
-
-    def generate_presigned_url_for_excel(s3_key: str) -> str:
-        try:
-            return s3_client.generate_presigned_url(
-                'get_object',
-                Params={
-                    'Bucket': bucket_name,
-                    'Key': s3_key,
-                    'ResponseContentDisposition': 'attachment'
-                },
-                ExpiresIn=3600
-            )
-        except ClientError as e:
-            logger.error(f"Error generating URL for {s3_key}: {e}")
-            return s3_key
-
-    output = io.BytesIO()
-    workbook = xlsxwriter.Workbook(output, {'in_memory': True})
-    worksheet = workbook.add_worksheet("Invoices")
-
-    headers = [
-        "ID",
-        "Status",
-        "Category",
-        "Created At",
-        "Vendor",
-        "Amount",
-        "Purchase Date",
-        "Download Original"
-    ]
-
-    for col_num, header in enumerate(headers):
-        worksheet.write(0, col_num, header)
-
-    for row_num, invoice in enumerate(invoices_list, start=1):
-        extracted = invoice.get('extracted_data', {}) or {}
-        s3_key = invoice.get('s3_key', '')
-        presigned_url = generate_presigned_url_for_excel(s3_key) if s3_key else ''
-
-        worksheet.write(row_num, 0, invoice.get('id'))
-        worksheet.write(row_num, 1, invoice.get('status', 'Unknown'))
-        worksheet.write(row_num, 2, invoice.get('category', 'Uncategorized'))
-        worksheet.write(row_num, 3, invoice.get('created_at').isoformat() if invoice.get('created_at') else '')
-        worksheet.write(row_num, 4, extracted.get('vendor_name', 'Unknown'))
-        worksheet.write(row_num, 5, extracted.get('amount', 'Unknown'))
-        worksheet.write(row_num, 6, extracted.get('purchase_date', 'Unknown'))
-        worksheet.write_url(row_num, 7, presigned_url, string="Download")
-
-    workbook.close()
-    output.seek(0)
-
-    try:
-        telegram_bot_instance = bot if bot else Bot(token=TG_BOT_TOKEN)
-        await telegram_bot_instance.send_document(
-            chat_id=user_telegram_chat_id,
-            document=InputFile(output, filename="invoices.xlsx"),
-            caption="Here are your invoices as an Excel file."
-        )
-        return {"message": "Excel file sent to Telegram successfully!"}
-    except Exception as e:
-        logger.error(f"Error sending Excel to Telegram: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to send Excel to Telegram: {e}")
-
-
-@router.post("/send-chart-to-telegram")
-async def send_chart_to_telegram(chart_request: ChartRequest, current_user: dict = Depends(get_current_user)):
-    if not bot:
-        raise HTTPException(status_code=500, detail="Telegram bot not configured. TG_BOT_TOKEN is missing.")
-
+async def send_excel_to_telegram(request: Request, current_user: dict = Depends(get_current_user)):
+    """
+    Sends a request to Kafka to generate and send an Excel report to the user's Telegram.
+    The actual report generation is handled by the worker.
+    :param request: The FastAPI request object.
+    :param current_user: Authenticated user's data.
+    :return: Status message.
+    """
     user_id = current_user['id']
     user_telegram_chat_id = current_user['telegram_chat_id']
 
     if not user_telegram_chat_id:
-        raise HTTPException(status_code=400, detail="Telegram chat ID not registered for this user.")
+        raise HTTPException(status_code=400, detail="Telegram chat ID not registered for this user. Please link your Telegram account.")
 
-    categories_summary = chart_request.chart_data
+    # Ensure Kafka producer is initialized
+    if not hasattr(request.app.state, 'kafka_producer') or not request.app.state.kafka_producer:
+        raise HTTPException(status_code=500, detail="Kafka producer is not initialized.")
 
-    if not categories_summary:
-        raise HTTPException(status_code=404, detail="No chart data provided.")
+    # Prepare message payload for Kafka to request Excel report
+    message_payload = {
+        "user_id": user_id,
+        "telegram_chat_id": user_telegram_chat_id,
+        "report_type": "excel", # Indicate that an Excel report is requested
+        "request_timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
-    labels = [item['category'] for item in categories_summary]
-    sizes = [item['total_amount'] for item in categories_summary]
+    # Send the message to the Kafka topic for report requests
+    await request.app.state.kafka_producer.send_and_wait(
+        KAFKA_REPORT_REQUEST_TOPIC,
+        json.dumps(message_payload).encode("utf-8")
+    )
+    logger.info(f"Sent Kafka message for Excel report request for user {user_id} to topic {KAFKA_REPORT_REQUEST_TOPIC}.")
 
-    if not labels or not sizes:
-        raise HTTPException(status_code=404, detail="No valid data to generate chart.")
+    return {"message": "Excel report generation requested. It will be sent to your Telegram shortly."}
 
-    fig, ax = plt.subplots(figsize=(8, 8))
 
-    colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#6A5ACD', '#20B2AA', '#7B68EE',
-              '#FFD700', '#A9A9A9', '#ADD8E6', '#8A2BE2', '#7FFF00', '#DC143C', '#00FFFF', '#00008B', '#B8860B', '#006400', '#8B008B']
-    pie_colors = [colors[i % len(colors)] for i in range(len(labels))]
+@router.post("/send-chart-to-telegram")
+async def send_chart_to_telegram(chart_request: ChartRequest, request: Request, current_user: dict = Depends(get_current_user)):
+    """
+    Sends a request to Kafka to generate and send a chart report to the user's Telegram.
+    The actual chart generation is handled by the worker.
+    :param chart_request: ChartRequest Pydantic model with chart data.
+    :param request: The FastAPI request object.
+    :param current_user: Authenticated user's data.
+    :return: Status message.
+    """
+    user_id = current_user['id']
+    user_telegram_chat_id = current_user['telegram_chat_id']
 
-    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=pie_colors,
-           wedgeprops={'edgecolor': 'black'}, textprops={'fontsize': 10})
-    ax.axis('equal')
-    ax.set_title('Invoice Category Distribution', fontsize=16, pad=20)
+    if not user_telegram_chat_id:
+        raise HTTPException(status_code=400, detail="Telegram chat ID not registered for this user. Please link your Telegram account.")
 
-    buffer = io.BytesIO()
-    plt.savefig(buffer, format='png', bbox_inches='tight', dpi=100)
-    buffer.seek(0)
-    plt.close(fig)
+    if not chart_request.chart_data:
+        raise HTTPException(status_code=404, detail="No chart data provided to generate chart.")
 
-    try:
-        await bot.send_photo(
-            chat_id=user_telegram_chat_id,
-            photo=InputFile(buffer, filename="invoice_categories_chart.png"),
-            caption="Here is your invoice category distribution chart."
-        )
-        return {"message": "Chart sent to Telegram successfully!"}
-    except Exception as e:
-        logger.error(f"Error sending chart to Telegram: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to send chart to Telegram: {e}")
+    # Ensure Kafka producer is initialized
+    if not hasattr(request.app.state, 'kafka_producer') or not request.app.state.kafka_producer:
+        raise HTTPException(status_code=500, detail="Kafka producer is not initialized.")
+
+    # Prepare message payload for Kafka to request chart report
+    message_payload = {
+        "user_id": user_id,
+        "telegram_chat_id": user_telegram_chat_id,
+        "report_type": "chart", # Indicate that a chart report is requested
+        "chart_data": chart_request.chart_data, # Pass the chart data directly
+        "request_timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+    # Send the message to the Kafka topic for report requests
+    await request.app.state.kafka_producer.send_and_wait(
+        KAFKA_REPORT_REQUEST_TOPIC,
+        json.dumps(message_payload).encode("utf-8")
+    )
+    logger.info(f"Sent Kafka message for Chart report request for user {user_id} to topic {KAFKA_REPORT_REQUEST_TOPIC}.")
+
+    return {"message": "Chart report generation requested. It will be sent to your Telegram shortly."}
 
 @router.get("/users/me")
 async def get_user_profile(current_user: dict = Depends(get_current_user)):
     """
     Returns the current user's profile, including verification status and telegram_chat_id.
+    This endpoint allows the frontend to retrieve authenticated user details.
+    :param current_user: Authenticated user's data.
+    :return: A dictionary containing relevant user profile information.
     """
-    # current_user already contains all user fields from the DB due to get_current_user
-    # We can return a subset or all of it, depending on what frontend needs.
-    # For now, let's return relevant fields.
+    # current_user already contains all user fields from the DB due to get_current_user dependency.
+    # We return a subset of fields relevant for the frontend, converting is_verified to boolean.
     return {
         "id": current_user['id'],
         "email": current_user['email'],
         "phone": current_user['phone'],
-        "is_verified": bool(current_user['is_verified']), # Convert 0/1 to boolean
+        "is_verified": bool(current_user['is_verified']), # Convert 0/1 integer to boolean for clarity
         "telegram_chat_id": current_user['telegram_chat_id']
     }

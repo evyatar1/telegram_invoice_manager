@@ -3,59 +3,71 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
-import os
-from aiokafka import AIOKafkaProducer  # Import AIOKafkaProducer
+import logging
 
-# Define producer as part of app.state, not a global variable here
-# producer: AIOKafkaProducer | None = None # REMOVED
+from .kafka_producer import (
+    start_kafka_producer_instance,
+    stop_kafka_producer_instance,
+    get_kafka_producer,
+)
+from .routes import router
+from .telegram_bot import run_telegram_bot_background, stop_telegram_bot_background
 
-async def start_kafka_producer(app: FastAPI): # Pass app directly
-    """Starts the Kafka producer and attaches it to app.state."""
-    try:
-        app.state.kafka_producer = AIOKafkaProducer(bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS"))
-        await app.state.kafka_producer.start()
-        print("Kafka producer started successfully and attached to app.state.")
-    except Exception as e:
-        print(f"CRITICAL ERROR: Failed to start Kafka producer: {e}")
-        raise
-
-
-async def stop_kafka_producer(app: FastAPI): # Pass app directly
-    """Stops the Kafka producer."""
-    if hasattr(app.state, 'kafka_producer') and app.state.kafka_producer:
-        await app.state.kafka_producer.stop()
-        print("Kafka producer stopped.")
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Manages the startup and shutdown events for the FastAPI application.
-    """
-    print("Starting API Server lifespan startup...")
+    logger.info("API server lifespan startup")
 
-    print("Waiting 15 seconds for Kafka services to become available...")
-    await asyncio.sleep(15)  # Give Kafka broker some time to be fully ready
+    # wait for Kafka readiness
+    logger.info("Waiting 15 seconds for Kafka services to become available...")
+    await asyncio.sleep(15)
 
-    # Start Kafka producer
-    await start_kafka_producer(app) # Pass app to start_kafka_producer
+    # start Kafka producer
+    await start_kafka_producer_instance()
+    app.state.kafka_producer = get_kafka_producer()
+    logger.info("Kafka producer started and attached to app.state.kafka_producer")
 
-    yield  # Application runs
+    # start Telegram bot in background
+    app.state.telegram_bot_app = await run_telegram_bot_background()
+    logger.info("Telegram bot started in background and attached to app.state.telegram_bot_app")
 
-    # Shutdown events
-    print("API Server lifespan shutdown complete.")
-    await stop_kafka_producer(app) # Pass app to stop_kafka_producer
+    try:
+        yield
+    finally:
+        logger.info("API server lifespan shutdown starting")
+
+        # stop Telegram bot
+        try:
+            if getattr(app.state, "telegram_bot_app", None):
+                await stop_telegram_bot_background(app.state.telegram_bot_app)
+                logger.info("Telegram bot stopped cleanly")
+        except Exception as e:
+            logger.exception("Error while stopping Telegram bot: %s", e)
+
+        # stop Kafka producer
+        try:
+            await stop_kafka_producer_instance()
+            logger.info("Kafka producer stopped")
+        except Exception as e:
+            logger.exception("Error while stopping Kafka producer: %s", e)
+
+        logger.info("API server lifespan shutdown complete")
 
 
 app = FastAPI(lifespan=lifespan)
 
-# Add CORS middleware
+# CORS config
 origins = [
     "http://localhost",
     "http://localhost:3000",
-    "http://host.docker.internal:3000"  # ADD THIS!
+    "http://host.docker.internal:3000",
 ]
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -64,6 +76,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Import and include the API router after the app is created
-from .routes import router
+# include routes
 app.include_router(router)
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info",
+        access_log=True,
+        use_colors=True,
+    )

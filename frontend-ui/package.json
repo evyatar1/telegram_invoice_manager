@@ -19,8 +19,8 @@
     "xlsx": "^0.18.5"
   },
   "scripts": {
-    "start": "react-scripts start"
-  },
+    "start": "react-scripts start",
+    "build": "react-scripts build"  },
   "browserslist": {
     "production": [
       ">0.2%",

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15
@@ -30,71 +28,63 @@ services:
     environment:
       # KRaft mode configuration
       KAFKA_CFG_NODE_ID: 1
-      KAFKA_CFG_PROCESS_ROLES: broker,controller
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@broker:9093 # Node ID @ Host:Port
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@broker:9093
       KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092 # How clients connect
-      ALLOW_PLAINTEXT_LISTENER: "yes" # Required for PLAINTEXT listener
-
-      # Data persistence for Kafka's KRaft metadata
-      KAFKA_CFG_LOG_DIRS: /tmp/kraft-storage
-
-      # Increased internal Kafka heartbeat and session timeouts
-      KAFKA_CFG_BROKER_HEARTBEAT_INTERVAL_MS: 5000 # Default is 2000ms
-      KAFKA_CFG_BROKER_SESSION_TIMEOUT_MS: 15000 # Default is 9000ms
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_LOG_DIRS: /tmp/kraft-logs
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true" # Enable auto topic creation
+      ALLOW_PLAINTEXT_LISTENER: "yes" # For development only
+    volumes:
+      - broker-data:/bitnami/kafka
     networks:
       - app-network
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"] # Check if Kafka can list topics
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 300s # CRITICAL: Increased to 300 seconds (5 minutes) for startup
-    deploy: # Allocate more resources to Kafka (if your machine can provide them)
-      resources:
-        limits:
-          cpus: '1.0' # Allocate 1 full CPU core
-          memory: 1G # Allocate 1 GB of RAM
+      retries: 10
+      start_period: 300s # Give Kafka enough time to start in KRaft mode
 
-  # Service for initializing Kafka topics (e.g., 'invoice-processing-topic')
   kafka-init:
-    image: bitnami/kafka:3.4.0 # Use the same Kafka image
+    image: bitnami/kafka:3.4.0
     container_name: kafka-topic-initializer
-    volumes:
-      # Mount a script to create topics. Ensure this script exists and is executable.
-      - ./init-kafka-topics.sh:/usr/local/bin/init-kafka-topics.sh:ro
-    command: ["bash", "/usr/local/bin/init-kafka-topics.sh"]
     depends_on:
       broker:
-        condition: service_healthy # Wait for broker to be healthy before creating topics
+        condition: service_healthy
     networks:
       - app-network
-    restart: "no" # This is a one-off task, it should not restart after completion
+    volumes:
+      - ./init-kafka-topics.sh:/usr/local/bin/init-kafka-topics.sh:ro # Mount the script
+    command: ["bash", "/usr/local/bin/init-kafka-topics.sh"] # Execute the script
+    restart: "no" # Do not restart after completion
 
   api-server:
     build:
-      context: .
-      dockerfile: ./api-server/Dockerfile
+      context: . # Build context is project root
+      dockerfile: ./api-server/Dockerfile # Path to Dockerfile
     container_name: telegram_invoice_manager-api-server-1
     env_file: ./api-server/.env
-    ports:
-      - "8000:8000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway" # Allows frontend to connect to backend on host
     depends_on:
       db:
-        condition: service_healthy # Ensure DB is ready
+        condition: service_healthy
       broker:
-        condition: service_healthy # Ensure Kafka broker is ready
+        condition: service_healthy
       kafka-init:
-        condition: service_completed_successfully # Ensure Kafka topics are created
+        condition: service_completed_successfully
+    restart: on-failure
     networks:
       - app-network
+    ports:
+      - "8000:8000"
 
   worker:
     build:
-      context: .
-      dockerfile: ./logic-worker/Dockerfile
+      context: . # Build context is project root
+      dockerfile: ./logic-worker/Dockerfile # Path to Dockerfile
     container_name: telegram_invoice_manager-worker-1
     env_file: ./logic-worker/.env
     depends_on:
@@ -104,48 +94,34 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      api-server: # NEW: Worker now depends on api-server for its internal HTTP calls
+        condition: service_started
     restart: on-failure
     networks:
       - app-network
-
-
-  telegram-bot:
-    build:
-      context: .
-      dockerfile: ./telegram-bot/Dockerfile
-    container_name: telegram_invoice_manager-telegram-bot-1
-    env_file: ./telegram-bot/.env
-    depends_on:
-      db:
-        condition: service_healthy
-      broker:
-        condition: service_healthy
-      api-server:
-        condition: service_started # Bot needs API server to be running for login
-      kafka-init: # NEW: Depends on kafka-init to ensure topics exist
-        condition: service_completed_successfully
-    restart: on-failure
-    networks:
-      - app-network
-    # REMOVED the 'command' line that was causing the error
-    # command: ["/usr/local/bin/wait-for-it.sh", "db:5432", "--", "/usr/local/bin/wait-for-it.sh", "broker:9092", "--", "/usr/local/bin/wait-for-it.sh", "api-server:8000", "--", "python", "-u", "main.py"]
 
   frontend:
-    build: ./frontend-ui
+    build:
+      context: . # Build context is project root
+      dockerfile: ./frontend-ui/Dockerfile # Path to Dockerfile
     container_name: telegram_invoice_manager-frontend-1
     ports:
-      - "3000:3000"
-    environment:
-      - REACT_APP_API_URL=http://localhost:8000 # Frontend connects to API server
+      - "3000:80" # Map host port 3000 to container port 80 (Nginx default)
     depends_on:
-      - api-server # Ensure API server is up before frontend starts
+      api-server:
+        condition: service_started
     networks:
       - app-network
 
 volumes:
-  db-data: # Volume for PostgreSQL data persistence
-  # kafka-data: # Uncomment if you want Kafka data persistence (requires KAFKA_CFG_LOG_DIRS to point here)
+  db-data:
+  broker-data:
 
 networks:
   app-network:
     driver: bridge
+
+
+
+
+
