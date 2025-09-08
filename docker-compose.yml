@@ -60,12 +60,12 @@ services:
     volumes:
       - ./init-kafka-topics.sh:/usr/local/bin/init-kafka-topics.sh:ro # Mount the script
     command: ["bash", "/usr/local/bin/init-kafka-topics.sh"] # Execute the script
-    restart: "no" # Do not restart after completion
+    restart: "no"
 
   api-server:
     build:
-      context: . # Build context is project root
-      dockerfile: ./api-server/Dockerfile # Path to Dockerfile
+      context: .
+      dockerfile: ./api-server/Dockerfile
     container_name: telegram_invoice_manager-api-server-1
     env_file: ./api-server/.env
     depends_on:
@@ -83,8 +83,8 @@ services:
 
   worker:
     build:
-      context: . # Build context is project root
-      dockerfile: ./logic-worker/Dockerfile # Path to Dockerfile
+      context: .
+      dockerfile: ./logic-worker/Dockerfile
     container_name: telegram_invoice_manager-worker-1
     env_file: ./logic-worker/.env
     depends_on:
@@ -94,7 +94,7 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
-      api-server: # NEW: Worker now depends on api-server for its internal HTTP calls
+      api-server:
         condition: service_started
     restart: on-failure
     networks:
@@ -102,11 +102,11 @@ services:
 
   frontend:
     build:
-      context: . # Build context is project root
-      dockerfile: ./frontend-ui/Dockerfile # Path to Dockerfile
+      context: .
+      dockerfile: ./frontend-ui/Dockerfile
     container_name: telegram_invoice_manager-frontend-1
     ports:
-      - "3000:80" # Map host port 3000 to container port 80 (Nginx default)
+      - "3000:80"
     depends_on:
       api-server:
         condition: service_started
@@ -120,8 +120,3 @@ volumes:
 networks:
   app-network:
     driver: bridge
-
-
-
-
-
