@@ -12,7 +12,7 @@ sqlalchemy
 openai
 kafka-python
 python-jose>=3.3.0
-matplotlib>=3.5.0 # NEW: For chart generation
-XlsxWriter>=3.0.0 # NEW: For Excel generation
+matplotlib>=3.5.0
+XlsxWriter>=3.0.0
 python-telegram-bot[asyncio]>=20.8
 nest_asyncio

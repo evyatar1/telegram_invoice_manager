@@ -21,22 +21,3 @@ EXPOSE 80
 
 # Command to run Nginx
 CMD ["nginx", "-g", "daemon off;"]
-
-
-
-## Dockerfile
-#FROM node:18
-#
-#WORKDIR /app
-#
-#COPY package*.json ./
-#RUN npm install
-#
-#COPY . .
-#
-#EXPOSE 3000
-#
-#CMD ["npm", "start"]
-#
-#
-#
