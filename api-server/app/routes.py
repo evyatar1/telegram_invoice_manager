@@ -69,8 +69,6 @@ pwd_context = CryptContext(
 )
 
 
-
-
 # OAuth2PasswordBearer for extracting JWT tokens from Authorization headers.
 # The tokenUrl points to the login endpoint where clients can obtain a token.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -242,83 +240,6 @@ async def register_user(user: UserCreate):
     return {"message": "User registered successfully. Please link your Telegram account to verify."}
 
 
-
-
-# @router.post("/register")
-# async def register_user(user: UserCreate):
-#     """
-#     Registers a new user in the system.
-#     :param user: UserCreate Pydantic model containing email, password, and phone.
-#     :return: Success message.
-#     """
-#     with engine.connect() as conn:
-#         existing_user_query = select(users).where(users.c.email == user.email)
-#         existing_user = conn.execute(existing_user_query).fetchone()
-#         if existing_user:
-#             raise HTTPException(status_code=400, detail="Email already registered")
-#
-#         # Truncate password ל-72 characters לפני hash
-#         password_truncated = user.password[:72]  # <-- תו עד תו
-#         hashed_password = pwd_context.hash(password_truncated)  # <-- Passlib רוצה str, לא bytes
-#
-#         # hashed_password = pwd_context.hash(user.password[:72])
-#
-#         # הכנסת המשתמש החדש ל-DB
-#         insert_stmt = users.insert().values(
-#             email=user.email,
-#             hashed_pw=hashed_password,
-#             phone=user.phone,
-#             is_verified=0,  # לא מאומת עדיין
-#             otp_secret=None,
-#             otp_expires=None,
-#             telegram_chat_id=None
-#         )
-#         conn.execute(insert_stmt)
-#         conn.commit()  # שמירת השינויים
-#
-#     logger.info(f"User {user.email} registered successfully.")
-#     return {"message": "User registered successfully. Please link your Telegram account to verify."}
-#
-#
-
-
-
-
-# @router.post("/register")
-# async def register_user(user: UserCreate):
-#     """
-#     Registers a new user in the system.
-#     :param user: UserCreate Pydantic model containing email, password, and phone.
-#     :return: Success message.
-#     """
-#     with engine.connect() as conn:
-#         # Check if a user with the given email already exists
-#         existing_user_query = select(users).where(users.c.email == user.email)
-#         existing_user = conn.execute(existing_user_query).fetchone()
-#         if existing_user:
-#             raise HTTPException(status_code=400, detail="Email already registered")
-#
-#         # Hash the user's password for secure storage
-#         # hashed_password = pwd_context.hash(user.password)
-#
-#         password = user.password[:72]
-#         hashed_password = pwd_context.hash(password)
-#
-#         # Insert the new user into the database
-#         insert_stmt = users.insert().values(
-#             email=user.email,
-#             hashed_pw=hashed_password,
-#             phone=user.phone,
-#             is_verified=0, # User is not verified initially
-#             otp_secret=None,
-#             otp_expires=None,
-#             telegram_chat_id=None
-#         )
-#         conn.execute(insert_stmt)
-#         conn.commit() # Commit the transaction to save changes
-#
-#     logger.info(f"User {user.email} registered successfully.") # Log user registration
-#     return {"message": "User registered successfully. Please link your Telegram account to verify."}
 
 @router.post("/link-telegram-account")
 async def link_telegram_account(telegram_link_data: TelegramLinkRequest, request: Request):
