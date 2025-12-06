@@ -1,3 +1,4 @@
+
 services:
   db:
     image: postgres:15
@@ -20,7 +21,7 @@ services:
       retries: 5
 
   broker:
-    image: bitnami/kafka:3.4.0
+    image: bitnamilegacy/kafka:3.4.0
     container_name: broker
     ports:
       - "9092:9092" # Client listener
@@ -50,7 +51,7 @@ services:
       start_period: 300s # Give Kafka enough time to start in KRaft mode
 
   kafka-init:
-    image: bitnami/kafka:3.4.0
+    image: bitnamilegacy/kafka:3.4.0
     container_name: kafka-topic-initializer
     depends_on:
       broker:
@@ -120,3 +121,131 @@ volumes:
 networks:
   app-network:
     driver: bridge
+
+
+
+
+
+
+#services:
+#  db:
+#    image: postgres:15
+#    container_name: telegram_invoice_manager-db-1
+#    environment:
+#      POSTGRES_USER: postgres
+#      POSTGRES_PASSWORD: postgres123
+#      POSTGRES_DB: appdb
+#    volumes:
+#      - db-data:/var/lib/postgresql/data
+#      - ./databases/app-db:/docker-entrypoint-initdb.d # This mounts your init.sql
+#    ports:
+#      - "5433:5432"
+#    networks:
+#      - app-network
+#    healthcheck:
+#      test: ["CMD-SHELL", "pg_isready -U postgres -d appdb"]
+#      interval: 5s
+#      timeout: 5s
+#      retries: 5
+#
+#  broker:
+#    image: bitnami/kafka:3.3.1
+#    container_name: broker
+#    ports:
+#      - "9092:9092" # Client listener
+#      - "9093:9093" # Controller listener
+#    environment:
+#      # KRaft mode configuration
+#      KAFKA_CFG_NODE_ID: 1
+#      KAFKA_CFG_PROCESS_ROLES: controller,broker
+#      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@broker:9093
+#      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+#      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092
+#      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+#      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+#      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+#      KAFKA_CFG_LOG_DIRS: /tmp/kraft-logs
+#      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true" # Enable auto topic creation
+#      ALLOW_PLAINTEXT_LISTENER: "yes" # For development only
+#    volumes:
+#      - broker-data:/bitnami/kafka
+#    networks:
+#      - app-network
+#    healthcheck:
+#      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+#      interval: 10s
+#      timeout: 5s
+#      retries: 10
+#      start_period: 300s # Give Kafka enough time to start in KRaft mode
+#
+#  kafka-init:
+#    image: bitnami/kafka:3.4.0
+#    container_name: kafka-topic-initializer
+#    depends_on:
+#      broker:
+#        condition: service_healthy
+#    networks:
+#      - app-network
+#    volumes:
+#      - ./init-kafka-topics.sh:/usr/local/bin/init-kafka-topics.sh:ro # Mount the script
+#    command: ["bash", "/usr/local/bin/init-kafka-topics.sh"] # Execute the script
+#    restart: "no"
+#
+#  api-server:
+#    build:
+#      context: .
+#      dockerfile: ./api-server/Dockerfile
+#    container_name: telegram_invoice_manager-api-server-1
+#    env_file: ./api-server/.env
+#    depends_on:
+#      db:
+#        condition: service_healthy
+#      broker:
+#        condition: service_healthy
+#      kafka-init:
+#        condition: service_completed_successfully
+#    restart: on-failure
+#    networks:
+#      - app-network
+#    ports:
+#      - "8000:8000"
+#
+#  worker:
+#    build:
+#      context: .
+#      dockerfile: ./logic-worker/Dockerfile
+#    container_name: telegram_invoice_manager-worker-1
+#    env_file: ./logic-worker/.env
+#    depends_on:
+#      db:
+#        condition: service_healthy
+#      broker:
+#        condition: service_healthy
+#      kafka-init:
+#        condition: service_completed_successfully
+#      api-server:
+#        condition: service_started
+#    restart: on-failure
+#    networks:
+#      - app-network
+#
+#  frontend:
+#    build:
+#      context: .
+#      dockerfile: ./frontend-ui/Dockerfile
+#    container_name: telegram_invoice_manager-frontend-1
+#    ports:
+#      - "3000:80"
+#    depends_on:
+#      api-server:
+#        condition: service_started
+#    networks:
+#      - app-network
+#
+#volumes:
+#  db-data:
+#  broker-data:
+#
+#networks:
+#  app-network:
+#    driver: bridge

@@ -10,10 +10,10 @@ from sqlalchemy import create_engine, MetaData, Table, update, Column, Integer, 
 from paddleocr import PaddleOCR
 import cv2, boto3
 import numpy as np
-import xlsxwriter  # For Excel generation
-import matplotlib.pyplot as plt  # For chart generation
-from telegram import Bot, InputFile  # For Telegram interaction
-import uuid  # NEW: Import uuid for generating unique S3 keys
+import xlsxwriter
+import matplotlib.pyplot as plt
+from telegram import Bot, InputFile
+import uuid
 import os
 import json
 from shared.config import DB_URL, S3_BUCKET, S3_REGION, TG_BOT_TOKEN

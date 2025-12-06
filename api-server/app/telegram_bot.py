@@ -1,4 +1,3 @@
-# app/telegram_bot.py
 import os
 import io
 import logging

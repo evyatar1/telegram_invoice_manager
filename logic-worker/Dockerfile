@@ -1,6 +1,6 @@
-# logic-worker/Dockerfile
 # Stage 1: Build dependencies
 FROM python:3.10-bullseye as builder
+# FROM python:3.11-slim
 
 WORKDIR /app/builder
 
