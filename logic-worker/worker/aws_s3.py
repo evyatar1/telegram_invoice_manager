@@ -10,6 +10,7 @@ S3_REGION = os.getenv("S3_REGION")
 # boto3 will automatically look for AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
 s3 = boto3.client("s3", region_name=S3_REGION)
 
+
 def download_to_memory(key: str) -> bytes:
     """Downloads a file from S3 into memory and returns its bytes."""
     try:

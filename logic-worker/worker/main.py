@@ -8,6 +8,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 async def main_worker_loop():
     logger.info("Starting Kafka consumer...")
     await consume_loop()

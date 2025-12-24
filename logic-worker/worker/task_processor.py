@@ -5,8 +5,7 @@ import openai
 import re
 import logging
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, MetaData, Table, update, Column, Integer, String, DateTime, JSON, ForeignKey, \
-    select
+from sqlalchemy import create_engine, MetaData, Table, update, Column, Integer, String, DateTime, JSON, ForeignKey, select
 from paddleocr import PaddleOCR
 import cv2, boto3
 import numpy as np
@@ -17,7 +16,7 @@ import uuid
 import os
 import json
 from shared.config import DB_URL, S3_BUCKET, S3_REGION, TG_BOT_TOKEN
-from .config import OPENAI_API_KEY  # Assuming this config is for worker's OpenAI key
+from .config import OPENAI_API_KEY
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -67,8 +66,6 @@ if TG_BOT_TOKEN:
 else:
     logger.warning("TG_BOT_TOKEN not set in worker. Telegram outgoing messages will be disabled.")
 
-
-# --- Corrected OCR and Preprocessing Functions ---
 
 def preprocess_image(img_bytes: bytes) -> Image.Image:
     """
@@ -320,7 +317,6 @@ def extract_all_data(text: str) -> dict:
     }
 
 
-# --- Main Processing Function ---
 def process_invoice(image_bytes: bytes, invoice_id: int, user_id: int, original_s3_key_placeholder: str):
     """
     Processes an invoice image: performs OCR, extracts data, classifies,
@@ -396,7 +392,6 @@ def process_invoice(image_bytes: bytes, invoice_id: int, user_id: int, original_
             logger.info(f"Invoice {invoice_id} status updated to 'failed'.")
 
 
-# --- Telegram Interaction Functionality (Moved from API Server) ---
 async def send_telegram_message(chat_id: str, text: str = None, photo_buffer: io.BytesIO = None,
                                 document_buffer: io.BytesIO = None, filename: str = None, caption: str = None):
     """
@@ -414,7 +409,7 @@ async def send_telegram_message(chat_id: str, text: str = None, photo_buffer: io
             logger.info(f"Sent photo to Telegram chat_id: {chat_id}")
         elif document_buffer:
             await telegram_bot_instance.send_document(chat_id=chat_id, document=InputFile(document_buffer,
-                                                                                          filename=filename or "document.pdf"),
+                                                      filename=filename or "document.pdf"),
                                                       caption=caption)
             logger.info(f"Sent document to Telegram chat_id: {chat_id}")
         elif text:
@@ -425,8 +420,6 @@ async def send_telegram_message(chat_id: str, text: str = None, photo_buffer: io
     except Exception as e:
         logger.error(f"Error sending message to Telegram chat_id {chat_id}: {e}", exc_info=True)
 
-
-# --- Report Generation Functions (Moved from API Server) ---
 
 async def generate_and_send_excel_report(user_id: int, telegram_chat_id: str):
     logger.info(f"Generating Excel report for user {user_id} (chat_id: {telegram_chat_id})")
@@ -544,7 +537,6 @@ async def generate_and_send_chart_report(user_id: int, telegram_chat_id: str, ca
     logger.info(f"Chart report sent to Telegram for user {user_id}.")
 
 
-# --- Function to handle OTP sending (Moved from Telegram Bot's consumer logic) ---
 async def send_otp_to_telegram(user_id: int, otp_secret: str, telegram_chat_id: str):
     logger.info(f"Sending OTP to user {user_id} (chat_id: {telegram_chat_id})")
     await send_telegram_message(

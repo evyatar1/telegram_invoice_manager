@@ -5,19 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import logging
 
-from .kafka_producer import (
-    start_kafka_producer_instance,
-    stop_kafka_producer_instance,
-    get_kafka_producer,
-)
+from .kafka_producer import start_kafka_producer_instance, stop_kafka_producer_instance, get_kafka_producer
 from .routes import router
 from .telegram_bot import run_telegram_bot_background, stop_telegram_bot_background
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
 @asynccontextmanager

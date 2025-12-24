@@ -62,12 +62,7 @@ metadata.create_all(engine)
 # Password hashing context using Passlib.
 # Configured to use bcrypt for secure password hashing.
 # pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-pwd_context = CryptContext(
-    schemes=["pbkdf2_sha256"],
-    deprecated="auto"
-)
-
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 # OAuth2PasswordBearer for extracting JWT tokens from Authorization headers.
 # The tokenUrl points to the login endpoint where clients can obtain a token.
@@ -138,20 +133,24 @@ class UserCreate(BaseModel):
     password: str
     phone: str
 
+
 class UserLogin(BaseModel):
     """Pydantic model for user login request."""
     email: EmailStr
     password: str
+
 
 class Token(BaseModel):
     """Pydantic model for JWT token response."""
     access_token: str
     token_type: str = "bearer"
 
+
 class VerifyOtp(BaseModel):
     """Pydantic model for OTP verification request."""
     email: EmailStr
     otp: str
+
 
 class InvoiceResponse(BaseModel):
     """Pydantic model for invoice response data."""
@@ -164,10 +163,12 @@ class InvoiceResponse(BaseModel):
     category: str | None = None
     preview_url: str # Will be a presigned URL or '#' if not yet in S3
 
+
 class TelegramLinkRequest(BaseModel):
     """Pydantic model for linking Telegram account request."""
     phone: str
     telegram_chat_id: str
+
 
 class ChartRequest(BaseModel):
     """Pydantic model for chart generation request."""
@@ -209,7 +210,6 @@ async def delete_invoice(invoice_id: int, current_user: dict = Depends(get_curre
     return {"message": "Invoice deleted successfully"}
 
 
-
 @router.post("/register")
 async def register_user(user: UserCreate):
     with engine.connect() as conn:
@@ -218,10 +218,11 @@ async def register_user(user: UserCreate):
         if existing_user:
             raise HTTPException(status_code=400, detail="Email already registered")
 
-        # Convert password to bytes and truncate to 72 bytes
-        password_bytes = user.password.encode('utf-8')[:72]  # <-- truncate to max 72 bytes
-        password_truncated = password_bytes.decode('utf-8', 'ignore')  # convert back to str safely
-        hashed_password = pwd_context.hash(password_truncated)  # Passlib wants str
+        # # Convert password to bytes and truncate to 72 bytes
+        # password_bytes = user.password.encode('utf-8')[:72]  # <-- truncate to max 72 bytes
+        # password_truncated = password_bytes.decode('utf-8', 'ignore')  # convert back to str safely
+        # hashed_password = pwd_context.hash(password_truncated)  # Passlib wants str
+        hashed_password = pwd_context.hash(user.password)
 
         # Insert new user
         insert_stmt = users.insert().values(
@@ -238,7 +239,6 @@ async def register_user(user: UserCreate):
 
     logger.info(f"User {user.email} registered successfully.")
     return {"message": "User registered successfully. Please link your Telegram account to verify."}
-
 
 
 @router.post("/link-telegram-account")
@@ -364,11 +364,7 @@ async def login_for_access_token(user_login: UserLogin):
 
 
 @router.post("/upload-invoice")
-async def upload_invoice(
-        request: Request,
-        file: UploadFile = File(...),
-        current_user: dict = Depends(get_current_user)
-):
+async def upload_invoice(request: Request, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """
     Handles invoice file uploads. Stores a placeholder in DB and sends image bytes
     to Kafka for asynchronous processing by the worker.
@@ -575,6 +571,7 @@ async def send_chart_to_telegram(chart_request: ChartRequest, request: Request, 
 
     return {"message": "Chart report generation requested. It will be sent to your Telegram shortly."}
 
+
 @router.get("/users/me")
 async def get_user_profile(current_user: dict = Depends(get_current_user)):
     """
@@ -589,6 +586,6 @@ async def get_user_profile(current_user: dict = Depends(get_current_user)):
         "id": current_user['id'],
         "email": current_user['email'],
         "phone": current_user['phone'],
-        "is_verified": bool(current_user['is_verified']), # Convert 0/1 integer to boolean for clarity
+        "is_verified": bool(current_user['is_verified']),
         "telegram_chat_id": current_user['telegram_chat_id']
     }
