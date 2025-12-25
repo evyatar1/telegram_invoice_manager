@@ -123,4 +123,3 @@ async def consume_loop():
     finally:
         logger.info("Kafka consumer stopping...")
         await consumer.stop() # Ensure the consumer is properly stopped on exit
-
