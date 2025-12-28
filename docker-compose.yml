@@ -1,16 +1,18 @@
+version: '3.8'
+
 services:
   db:
     image: postgres:15
     container_name: telegram_invoice_manager-db-1
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
       POSTGRES_DB: appdb
+      # Password is intentionally removed to be fetched via Parameter Store/IAM
     volumes:
       - db-data:/var/lib/postgresql/data
-      - ./databases/app-db:/docker-entrypoint-initdb.d # This mounts your init.sql
+      - ./databases/app-db:/docker-entrypoint-initdb.d
     ports:
-      - "5433:5432"
+      - "5432:5432"
     networks:
       - app-network
     healthcheck:
@@ -23,10 +25,8 @@ services:
     image: bitnamilegacy/kafka:3.4.0
     container_name: broker
     ports:
-      - "9092:9092" # Client listener
-      - "9093:9093" # Controller listener
+      - "9092:9092"
     environment:
-      # KRaft mode configuration
       KAFKA_CFG_NODE_ID: 1
       KAFKA_CFG_PROCESS_ROLES: controller,broker
       KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@broker:9093
@@ -36,8 +36,8 @@ services:
       KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_CFG_LOG_DIRS: /tmp/kraft-logs
-      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true" # Enable auto topic creation
-      ALLOW_PLAINTEXT_LISTENER: "yes" # For development only
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
     volumes:
       - broker-data:/bitnami/kafka
     networks:
@@ -47,7 +47,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 300s # Give Kafka enough time to start in KRaft mode
+      start_period: 30s
 
   kafka-init:
     image: bitnamilegacy/kafka:3.4.0
@@ -58,8 +58,8 @@ services:
     networks:
       - app-network
     volumes:
-      - ./init-kafka-topics.sh:/usr/local/bin/init-kafka-topics.sh:ro # Mount the script
-    command: ["bash", "/usr/local/bin/init-kafka-topics.sh"] # Execute the script
+      - ./init-kafka-topics.sh:/usr/local/bin/init-kafka-topics.sh:ro
+    command: ["bash", "/usr/local/bin/init-kafka-topics.sh"]
     restart: "no"
 
   api-server:
@@ -67,7 +67,10 @@ services:
       context: .
       dockerfile: ./api-server/Dockerfile
     container_name: telegram_invoice_manager-api-server-1
-    env_file: ./api-server/.env
+    environment:
+      - S3_REGION=eu-north-1  # Match your AWS region
+      - DB_HOST=db
+      - KAFKA_BOOTSTRAP_SERVERS=broker:9092
     depends_on:
       db:
         condition: service_healthy
@@ -86,7 +89,10 @@ services:
       context: .
       dockerfile: ./logic-worker/Dockerfile
     container_name: telegram_invoice_manager-worker-1
-    env_file: ./logic-worker/.env
+    environment:
+      - S3_REGION=eu-north-1
+      - DB_HOST=db
+      - KAFKA_BOOTSTRAP_SERVERS=broker:9092
     depends_on:
       db:
         condition: service_healthy
@@ -120,3 +126,12 @@ volumes:
 networks:
   app-network:
     driver: bridge
+
+
+
+
+
+
+
+
+
