@@ -28,3 +28,10 @@ classify the extracted text into structured data.
 
 * **Database (PostgreSQL):** Provides persistent storage for user information and structured
 invoice data. It is accessed via **SQLAlchemy Core** for optimized performance and data integrity.
+
+<img width="1417" height="621" alt="architecture" src="https://github.com/user-attachments/assets/7dbdadbc-dd44-4e95-96fe-5e2fd6158301" />
+
+
+
+
+
