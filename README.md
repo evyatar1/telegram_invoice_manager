@@ -32,10 +32,52 @@ invoice data. It is accessed via **SQLAlchemy Core** for optimized performance a
 <img width="1417" height="621" alt="architecture" src="https://github.com/user-attachments/assets/7dbdadbc-dd44-4e95-96fe-5e2fd6158301" />
 
 # **Quick Start**
+**1. Clone the repository**
 ```
 git clone https://github.com/evyatar1/telegram_invoice_manager.git
 cd telegram_invoice_manager
 ```
+**2. Set Up Environment Variables**
 
+The system uses two separate .env files for the microservices.
 
+**Important:** Never commit your .env files to version control. Ensure they are added to your .gitignore to prevent exposing sensitive credentials.
 
+**API Server** ``` api-server/.env ```
+```
+DATABASE_URL=postgresql://postgres:your_password@db:5432/appdb
+JWT_SECRET=your_jwt_secret
+KAFKA_BOOTSTRAP_SERVERS=broker:9092
+KAFKA_TOPIC=invoices
+TG_BOT_TOKEN=your_telegram_bot_token
+AWS_ACCESS_KEY_ID=your_aws_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret
+API_USER_EMAIL=admin@example.com
+API_USER_PASSWORD=your_password
+```
+
+**Logic Worker** ``` /logic-worker/.env ```
+```
+DATABASE_URL=postgresql://postgres:your_password@db:5432/appdb
+KAFKA_BOOTSTRAP_SERVERS=broker:9092
+KAFKA_TOPIC=invoices
+KAFKA_TELEGRAM_OTP_TOPIC=telegram-otp-messages
+S3_BUCKET=your_s3_bucket_name
+S3_REGION=your_s3_region
+OPENAI_API_KEY=your_openai_api_key
+AWS_ACCESS_KEY_ID=your_aws_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret
+TG_BOT_TOKEN=your_telegram_bot_token
+JWT_SECRET=your_jwt_secret
+```
+
+**3. Build and Start the Services**
+
+The system uses a **multi-stage build** with a shared base image to optimize build time and resource usage.
+```bash
+# 1. Build the base image
+docker build -t base -f Dockerfile.base .
+
+# 2. Launch all services (API, Worker, Kafka, Postgres)
+docker-compose up --build -d
+```
