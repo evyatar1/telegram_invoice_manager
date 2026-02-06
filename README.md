@@ -31,7 +31,11 @@ invoice data. It is accessed via **SQLAlchemy Core** for optimized performance a
 
 <img width="1417" height="621" alt="architecture" src="https://github.com/user-attachments/assets/7dbdadbc-dd44-4e95-96fe-5e2fd6158301" />
 
-
+# **Quick Start**
+```
+git clone https://github.com/evyatar1/telegram_invoice_manager.git
+cd telegram_invoice_manager
+```
 
 
 
