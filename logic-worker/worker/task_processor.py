@@ -261,6 +261,7 @@ def extract_with_gpt(text: str, instruction: str, max_tokens: int = 50) -> str:
             ],
             max_tokens=max_tokens,
             temperature=0.0,
+            timeout=15
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -291,6 +292,7 @@ def classify_category(text: str) -> str:
             ],
             max_tokens=15,
             temperature=0.0,
+            timeout=15
         )
         result = response.choices[0].message.content.strip()
         return result if result in categories else "Other"

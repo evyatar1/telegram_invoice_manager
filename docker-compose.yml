@@ -1,13 +1,11 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15
     container_name: telegram_invoice_manager-db-1
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_DB: appdb
-      # Password is intentionally removed to be fetched via Parameter Store/IAM
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=appdb
+      - POSTGRES_PASSWORD=postgres123
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./databases/app-db:/docker-entrypoint-initdb.d
@@ -49,26 +47,15 @@ services:
       retries: 10
       start_period: 30s
 
-  kafka-init:
-    image: bitnamilegacy/kafka:3.4.0
-    container_name: kafka-topic-initializer
-    depends_on:
-      broker:
-        condition: service_healthy
-    networks:
-      - app-network
-    volumes:
-      - ./init-kafka-topics.sh:/usr/local/bin/init-kafka-topics.sh:ro
-    command: ["bash", "/usr/local/bin/init-kafka-topics.sh"]
-    restart: "no"
-
   api-server:
     build:
       context: .
       dockerfile: ./api-server/Dockerfile
     container_name: telegram_invoice_manager-api-server-1
+    env_file:
+      - ./api-server/.env
     environment:
-      - S3_REGION=eu-north-1  # Match your AWS region
+      - S3_REGION=eu-north-1
       - DB_HOST=db
       - KAFKA_BOOTSTRAP_SERVERS=broker:9092
     depends_on:
@@ -76,8 +63,6 @@ services:
         condition: service_healthy
       broker:
         condition: service_healthy
-      kafka-init:
-        condition: service_completed_successfully
     restart: on-failure
     networks:
       - app-network
@@ -89,6 +74,8 @@ services:
       context: .
       dockerfile: ./logic-worker/Dockerfile
     container_name: telegram_invoice_manager-worker-1
+    env_file:
+      - ./logic-worker/.env
     environment:
       - S3_REGION=eu-north-1
       - DB_HOST=db
@@ -98,8 +85,6 @@ services:
         condition: service_healthy
       broker:
         condition: service_healthy
-      kafka-init:
-        condition: service_completed_successfully
       api-server:
         condition: service_started
     restart: on-failure
@@ -126,12 +111,4 @@ volumes:
 networks:
   app-network:
     driver: bridge
-
-
-
-
-
-
-
-
 
